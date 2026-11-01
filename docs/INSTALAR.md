@@ -12,14 +12,14 @@ O app da loja fica em `umbrel/adalberto-calivix/`. Para publicar:
 
    ```bash
    scp ~/Library/Developer/Calivix/chave-adb.json umbrel@100.67.135.90:/tmp/
-   ssh umbrel@100.67.135.90 'sudo mv /tmp/chave-adb.json ~/umbrel/app-data/adalberto-calivix/data/ && sudo docker restart adalberto-calivix_server_1'
+   ssh umbrel@100.67.135.90 'docker cp /tmp/chave-adb.json adalberto-calivix_server_1:/data/ && docker restart adalberto-calivix_server_1 && rm /tmp/chave-adb.json'
    ```
 
    (Enquanto o arquivo estiver lá, é a chave dele que o servidor usa.)
 5. Publicar na Tailnet:
 
    ```bash
-   ssh umbrel@100.67.135.90 'sudo docker exec tailscale_web_1 tailscale serve --bg --https=8471 http://127.0.0.1:8796'
+   ssh umbrel@100.67.135.90 'docker exec tailscale_web_1 tailscale serve --bg --https=8471 http://127.0.0.1:8797'
    ```
 
    Endereço dos apps: `https://umbrel-home.tail16dbfe.ts.net:8471`

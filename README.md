@@ -38,7 +38,7 @@ Versão atual: veja `VERSAO` (uma só para todas as partes; `bash versao.sh 1.0.
 | `server/` | servidor (sem dependências), interface web em `public/`, `Dockerfile` |
 | `clients/desktop/` | app Electron (macOS universal, Windows x64); `npm run dist:mac` / `dist:win` |
 | `clients/mobile/` | app Capacitor (iOS/iPadOS/Android) com o plugin `CalivixRede` (`native/`) |
-| `umbrel/adalberto-calivix/` | app da loja do Umbrel (porta 8796) |
+| `umbrel/adalberto-calivix/` | app da loja do Umbrel (porta 8797) |
 | `marca/` | identidade visual (`python3 marca/gerar.py` gera tudo, inclusive ícones dos apps e o fundo do .dmg) |
 | `INSTALADORES/` | Mac `.dmg`, Windows `.exe`, Android `.apk` |
 
@@ -52,8 +52,8 @@ bash clients/mobile/gerar-apk.sh                                 # INSTALADORES/
 bash clients/mobile/instalar-ios.sh                              # instala nos iPhones/iPads conectados
 ```
 
-Portas: servidor `8795` (interna) · loja do Umbrel `8796` · HTTPS na Tailnet `8471`
-(`tailscale serve --bg --https=8471 http://127.0.0.1:8796`). O launcher vem de `repo/launcher`
+Portas: servidor `8795` (só dentro do contêiner) · loja do Umbrel `8797` · HTTPS na Tailnet `8471`
+(`tailscale serve --bg --https=8471 http://127.0.0.1:8797`). O launcher vem de `repo/launcher`
 (`./gradlew assembleRelease`) e é copiado para `server/public/launcher/calivix-launcher.apk`.
 
 ## Créditos
