@@ -1,0 +1,17 @@
+{
+  "appId": "app.calivix.app",
+  "appName": "Calivix",
+  "webDir": "www",
+  "backgroundColor": "#070a1a",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  },
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#070a1a"
+  }
+}

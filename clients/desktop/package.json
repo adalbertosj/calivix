@@ -1,0 +1,58 @@
+{
+  "name": "calivix-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Calivix para macOS e Windows",
+  "main": "main.js",
+  "author": "Adalberto Silva",
+  "scripts": {
+    "web": "node ../copy-web.mjs www desktop",
+    "icons": "node scripts/make-icons.mjs",
+    "start": "npm run web && electron .",
+    "dist:mac": "npm run web && npm run icons && bash scripts/build-mac.sh",
+    "dist:win": "npm run web && npm run icons && bash scripts/build-win.sh"
+  },
+  "devDependencies": {
+    "electron": "45.0.0",
+    "electron-builder": "26.18.0",
+    "resedit": "3.1.0"
+  },
+  "build": {
+    "appId": "app.calivix.desktop",
+    "productName": "Calivix",
+    "copyright": "Adalberto Silva",
+    "directories": { "output": "dist.nosync", "buildResources": "build" },
+    "files": ["main.js", "preload.js", "www/**/*"],
+    "afterPack": "./scripts/after-pack.cjs",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [{ "target": "dir", "arch": ["universal"] }],
+      "icon": "build/icon.icns",
+      "identity": null,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Ditar pedidos ao Claude.",
+        "NSLocalNetworkUsageDescription": "Encontrar e ajustar as TVs da sua rede."
+      }
+    },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "extraResources": [{ "from": "build/icon.ico", "to": "icone.ico" }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Calivix",
+      "installerIcon": "build/instalador.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "artifactName": "Calivix-Instalador-${version}.${ext}",
+      "language": "1046",
+      "multiLanguageInstaller": false,
+      "include": "scripts/instalador.nsh"
+    }
+  }
+}

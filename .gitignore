@@ -1,0 +1,19 @@
+.DS_Store
+node_modules/
+*.nosync
+# dados locais do servidor e cópias da TV (números de série, rede)
+server/dados/
+backup-tv-*/
+shots/
+# interface copiada para os apps (gerada por clients/copy-web.mjs)
+clients/*/www/
+clients/mobile/node_modules
+clients/mobile/ios
+clients/mobile/android
+clients/desktop/node_modules
+clients/desktop/build/
+# instaladores gerados
+INSTALADORES/
+# clone do projeto original (CleanYourTV): referência, não faz parte do Calivix
+repo/
+__pycache__/

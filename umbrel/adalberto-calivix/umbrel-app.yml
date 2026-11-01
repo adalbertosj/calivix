@@ -1,0 +1,43 @@
+manifestVersion: 1
+id: adalberto-calivix
+category: automation
+name: Calivix
+version: "1.0.0"
+tagline: Ajuste fino para suas TVs Android e Google TV
+description: >-
+  Calivix guarda os perfis das suas TVs e aplica os ajustes pela rede.
+
+
+  - Limpeza das TVs com listas testadas (CleanYourTV), com travas que impedem desligar o que a TV precisa
+
+  - Recursos como Chromecast, controle pelo celular e mídia USB desligados e religados com um toque
+
+  - Tela inicial limpa, sem propagandas, com os seus apps
+
+  - Perfis das TVs com nome, local e tudo o que foi mudado, sincronizados entre seus aparelhos
+
+  - Fila de pedidos: TVs alcançáveis pela Tailnet são ajustadas pelo servidor; as de outras redes recebem o ajuste quando um aparelho seu entrar no Wi-Fi delas
+
+  - Descoberta de TVs e TV boxes na rede, captura de tela e controle remoto
+
+  - Atalho para o Claude: peça por voz ou texto e ele ajusta a TV (MCP)
+
+  - Apps para iPhone, iPad, Android, macOS e Windows
+
+
+  Tudo fica no seu servidor.
+releaseNotes: >-
+  Primeira versão.
+developer: Adalberto
+website: https://github.com/adalbertosj/calivix
+submitter: Adalberto
+submission: https://github.com/adalbertosj/calivix
+repo: https://github.com/adalbertosj/calivix
+support: https://github.com/adalbertosj/calivix/issues
+icon: https://raw.githubusercontent.com/adalbertosj/benilab-umbrel-store/main/adalberto-calivix/icon.png
+port: 8796
+gallery: []
+path: ""
+defaultUsername: ""
+defaultPassword: ""
+dependencies: []

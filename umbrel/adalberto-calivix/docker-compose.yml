@@ -1,0 +1,21 @@
+version: "3.7"
+
+services:
+  app_proxy:
+    environment:
+      APP_HOST: adalberto-calivix_server_1
+      APP_PORT: 8795
+      # O Calivix tem login próprio (os apps de celular e computador falam com a API direto).
+      PROXY_AUTH_ADD: "false"
+
+  server:
+    image: ghcr.io/adalbertosj/calivix-server:1.0.0
+    restart: on-failure
+    stop_grace_period: 10s
+    environment:
+      DATA_DIR: /data
+      # Chave ADB já aprovada nas TVs (copiada de uma instalação anterior, se existir)
+      CHAVE_ADB_ARQUIVO: /data/chave-adb.json
+      TZ: America/Sao_Paulo
+    volumes:
+      - ${APP_DATA_DIR}/data:/data

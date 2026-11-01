@@ -1,0 +1,23 @@
+{
+  "name": "calivix-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Calivix para iPhone, iPad e Android (Capacitor)",
+  "type": "module",
+  "scripts": {
+    "web": "node ../copy-web.mjs www mobile",
+    "add:ios": "npm run web && npx cap add ios && node patch-native.mjs",
+    "add:android": "npm run web && npx cap add android && node patch-native.mjs",
+    "sync": "npm run web && npx cap sync && node patch-native.mjs",
+    "ios": "npm run sync && npx cap open ios",
+    "android": "npm run sync && npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3"
+  }
+}
