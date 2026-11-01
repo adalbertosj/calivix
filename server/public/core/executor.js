@@ -16,6 +16,7 @@ export const ACOES = {
   captura: 'Tirar uma captura da tela da TV',
   tecla: 'Apertar uma tecla do controle — { tecla: "HOME" | "OK" | … }',
   abrir_app: 'Abrir um aplicativo — { pacote }',
+  instalar_loja: 'Instalar um app gratuito pela Play Store da TV — { pacote } (veja a lista LOJA em core/tv.js)',
   instalar_apk: 'Instalar um APK — { arquivo } (enviado ao servidor antes)',
   dns: 'DNS privado — { servidor } (vazio desliga)',
   comando: 'Comando de shell avançado — { cmd }',
@@ -77,6 +78,7 @@ export async function executarTarefa(ctx, tvCad, tarefa) {
         case 'captura': resultado.captura = await tv.captura(adb); log('✓ captura feita'); break;
         case 'tecla': await tv.tecla(adb, p.tecla); log('✓ tecla ' + p.tecla); break;
         case 'abrir_app': await tv.abrirApp(adb, p.pacote); log('✓ abriu ' + p.pacote); break;
+        case 'instalar_loja': { const r = await tv.instalarDaLoja(adb, String(p.pacote || ''), log); if (r.instalado) (resultado.instalados ||= []).push(r.instalado); break; }
         case 'instalar_apk': await tv.instalarApk(adb, await ctx.arquivo(p.arquivo), log); break;
         case 'dns': await tv.dnsPrivado(adb, p.servidor || '', log); break;
         case 'comando': {
@@ -91,7 +93,7 @@ export async function executarTarefa(ctx, tvCad, tarefa) {
       }
     }
     // Depois de mexer, sempre relata o estado novo (o servidor guarda no perfil da TV).
-    if (!resultado.inventario && tarefa.acoes.some((a) => ['desativar', 'ativar', 'restaurar', 'instalar_launcher', 'instalar_apk'].includes(a.tipo))) {
+    if (!resultado.inventario && tarefa.acoes.some((a) => ['desativar', 'ativar', 'restaurar', 'instalar_launcher', 'instalar_apk', 'instalar_loja'].includes(a.tipo))) {
       resultado.inventario = await tv.inventario(adb);
     }
   } finally { adb.fechar(); }

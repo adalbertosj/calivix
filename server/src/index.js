@@ -89,6 +89,7 @@ function resumir(r) {
   if (r.restaurar) p.push('restaurada ao estado anterior');
   if (r.launcher) p.push('launcher limpo instalado');
   if (r.conferir) p.push(r.conferir.religados.length ? `${r.conferir.religados.length} religados pelo firmware` : 'nada religado');
+  if (r.instalados) p.push(r.instalados.length + ' app(s) instalado(s)');
   if (r.captura) p.push('captura de tela');
   return p.join(' · ') || 'concluída';
 }

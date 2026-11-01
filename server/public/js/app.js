@@ -2,7 +2,7 @@
 // iPhone/iPad/Android (Capacitor); nos apps nativos ela também executa as tarefas direto na TV.
 import { api, sessao, eventos } from './api.js';
 import * as motor from './motor.js';
-import { RECURSOS, NUCLEO_RE, NUCLEO_OK, nomeAmigavel, LAUNCHER, LAUNCHERS_DE_FABRICA, SETUP } from '../core/tv.js';
+import { RECURSOS, NUCLEO_RE, NUCLEO_OK, nomeAmigavel, LAUNCHER, LAUNCHERS_DE_FABRICA, SETUP, LOJA, PACOTE_RE } from '../core/tv.js';
 import { carregarCatalogo, sugerirListas } from '../core/catalogo.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -479,7 +479,24 @@ function abaApps(c, tv) {
     c.querySelectorAll('[data-app]').forEach((x) => { x.onchange = () => pedir(tv, `${x.checked ? 'Ativar' : 'Desativar'} ${nomeAmigavel(x.dataset.app)}`, [{ tipo: x.checked ? 'ativar' : 'desativar', params: { pacotes: [x.dataset.app] } }]); });
     c.querySelectorAll('[data-abrir]').forEach((b) => { b.onclick = () => pedir(tv, `Abrir ${nomeAmigavel(b.dataset.abrir)}`, [{ tipo: 'abrir_app', params: { pacote: b.dataset.abrir } }], { silencioso: true }); });
   };
-  c.innerHTML = `<div class="linha" style="margin-bottom:12px"><input class="ent" id="busca" placeholder="Procurar app…" style="max-width:320px"><label class="linha mini"><input type="checkbox" class="caixa" id="sis"> Mostrar apps do sistema</label><span class="espaco"></span><label class="bt peq">Instalar APK…<input type="file" accept=".apk" id="apk" hidden></label></div><div class="lista" id="lapps"></div>`;
+  const tem = new Set(inv.pacotes);
+  const instalar = (pacote, nome) => pedir(tv, `Instalar ${nome || nomeAmigavel(pacote)}`, [{ tipo: 'instalar_loja', params: { pacote } }]);
+  const tipos = [...new Set(LOJA.map((a) => a.tipo))];
+  c.innerHTML = `<div class="cartao" style="margin-bottom:16px"><h3 style="margin:0 0 4px">Instalar app</h3>
+      <p class="mini" style="margin:0 0 12px">Pela Play Store da própria TV, com a conta Google dela: o Calivix abre a página do app e aperta Instalar. Só apps gratuitos (assinaturas continuam sendo feitas no app).</p>
+      ${tipos.map((g) => `<div class="mini" style="margin:10px 0 6px"><b>${esc(g)}</b></div><div class="linha" style="flex-wrap:wrap;gap:8px">${LOJA.filter((a) => a.tipo === g).map((a) => tem.has(a.pacote)
+        ? `<span class="selo ok" title="${esc(a.pacote)}">${esc(a.nome)} ✓</span>`
+        : `<button class="bt peq" data-loja="${esc(a.pacote)}" title="${esc(a.pacote)}">+ ${esc(a.nome)}</button>`).join('')}</div>`).join('')}
+      <div class="linha" style="margin-top:14px"><input class="ent" id="outro" placeholder="Outro app: link da Play Store ou nome do pacote (ex.: com.exemplo.app)" style="flex:1;min-width:220px"><button class="bt pri" id="instOutro">Instalar</button></div></div>
+    <div class="linha" style="margin-bottom:12px"><input class="ent" id="busca" placeholder="Procurar app…" style="max-width:320px"><label class="linha mini"><input type="checkbox" class="caixa" id="sis"> Mostrar apps do sistema</label><span class="espaco"></span><label class="bt peq">Instalar APK…<input type="file" accept=".apk" id="apk" hidden></label></div><div class="lista" id="lapps"></div>`;
+  c.querySelectorAll('[data-loja]').forEach((b) => { b.onclick = () => instalar(b.dataset.loja, LOJA.find((a) => a.pacote === b.dataset.loja)?.nome); });
+  $('#instOutro').onclick = () => {
+    const v = $('#outro').value.trim();
+    const pacote = (v.match(/[?&]id=([A-Za-z0-9_.]+)/) || [])[1] || v;
+    if (!PACOTE_RE.test(pacote)) return toast('Cole o link da página do app na Play Store (play.google.com/store/apps/details?id=…) ou o nome do pacote');
+    if (tem.has(pacote)) return toast(nomeAmigavel(pacote) + ' já está instalado nesta TV');
+    instalar(pacote);
+  };
   $('#busca').oninput = (e) => { filtro = e.target.value.toLowerCase(); desenhar(); };
   $('#sis').onchange = (e) => { mostrarSistema = e.target.checked; desenhar(); };
   $('#apk').onchange = async (e) => {

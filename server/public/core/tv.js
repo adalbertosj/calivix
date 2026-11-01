@@ -334,6 +334,91 @@ export async function instalarApk(adb, dados, log) {
   log('✓ aplicativo instalado');
 }
 
+// Apps de TV mais pedidos, com o pacote da Play Store (a tela "Instalar app" e o Claude partem daqui).
+export const LOJA = [
+  { pacote: 'com.tailscale.ipn', nome: 'Tailscale', tipo: 'Rede' },
+  { pacote: 'com.google.android.youtube.tv', nome: 'YouTube', tipo: 'Vídeo' },
+  { pacote: 'com.netflix.ninja', nome: 'Netflix', tipo: 'Vídeo' },
+  { pacote: 'com.amazon.amazonvideo.livingroom', nome: 'Prime Video', tipo: 'Vídeo' },
+  { pacote: 'com.globo.globotv', nome: 'Globoplay', tipo: 'Vídeo' },
+  { pacote: 'com.disney.disneyplus', nome: 'Disney+', tipo: 'Vídeo' },
+  { pacote: 'com.wbd.stream', nome: 'Max', tipo: 'Vídeo' },
+  { pacote: 'com.apple.atve.androidtv.appletv', nome: 'Apple TV', tipo: 'Vídeo' },
+  { pacote: 'com.cbs.ca', nome: 'Paramount+', tipo: 'Vídeo' },
+  { pacote: 'com.crunchyroll.crunchyroid', nome: 'Crunchyroll', tipo: 'Vídeo' },
+  { pacote: 'tv.pluto.android', nome: 'Pluto TV', tipo: 'Vídeo' },
+  { pacote: 'tv.twitch.android.app', nome: 'Twitch', tipo: 'Vídeo' },
+  { pacote: 'com.spotify.tv.android', nome: 'Spotify', tipo: 'Música' },
+  { pacote: 'deezer.android.app', nome: 'Deezer', tipo: 'Música' },
+  { pacote: 'com.plexapp.android', nome: 'Plex', tipo: 'Mídia da casa' },
+  { pacote: 'org.jellyfin.androidtv', nome: 'Jellyfin', tipo: 'Mídia da casa' },
+  { pacote: 'org.videolan.vlc', nome: 'VLC', tipo: 'Mídia da casa' },
+  { pacote: 'org.xbmc.kodi', nome: 'Kodi', tipo: 'Mídia da casa' },
+  { pacote: 'com.valvesoftware.steamlink', nome: 'Steam Link', tipo: 'Jogos' },
+  { pacote: 'com.limelight', nome: 'Moonlight', tipo: 'Jogos' },
+  { pacote: 'com.yablio.sendfilestotv', nome: 'Send Files to TV', tipo: 'Ferramentas' },
+  { pacote: 'com.lonelycatgames.Xplore', nome: 'X-plore (arquivos)', tipo: 'Ferramentas' },
+  { pacote: 'com.tvwebbrowser.v22', nome: 'TV Web Browser', tipo: 'Ferramentas' },
+  { pacote: 'com.esaba.downloader', nome: 'Downloader', tipo: 'Ferramentas' },
+];
+
+// Lê os textos da tela (uiautomator) com a posição de cada um: [{ texto, x, y }].
+async function textosDaTela(adb) {
+  const f = '/data/local/tmp/calivix-ui.xml';
+  const xml = limpar(await adb.shell(`uiautomator dump ${f} >/dev/null 2>&1; cat ${f} 2>/dev/null; rm -f ${f}`, 20000));
+  return [...xml.matchAll(/<node [^>]*?text="([^"]+)"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/g)]
+    .map((m) => ({ texto: m[1].trim(), x: (+m[2] + +m[4]) >> 1, y: (+m[3] + +m[5]) >> 1 }));
+}
+
+// Instala um app pela Play Store da própria TV: abre a página dele e aperta "Instalar"; o download
+// usa a conta Google da TV. Apps pagos ou indisponíveis para TV param com a explicação. Se a tela
+// estava desligada, ela acende para a Play Store trabalhar e apaga de novo no fim.
+export async function instalarDaLoja(adb, pacote, log, { tempo = 600000 } = {}) {
+  if (!PACOTE_RE.test(pacote)) throw new Error('pacote inválido');
+  const instalado = async () => /^package:/m.test(limpar(await adb.shell(`pm path ${pacote} 2>/dev/null`)));
+  const nome = (LOJA.find((a) => a.pacote === pacote) || {}).nome || nomeAmigavel(pacote);
+  if (await instalado()) {
+    const desat = /package:/.test(await adb.shell(`pm list packages -d ${pacote} | grep -x "package:${pacote}"`));
+    log(desat ? `• ${nome} já está instalado, mas desativado (reative na lista de apps)` : `• ${nome} já está instalado`);
+    return { jaInstalado: true };
+  }
+  if (!/package:com\.android\.vending/.test(await adb.shell('pm list packages -e com.android.vending'))) {
+    throw new Error('A Play Store está desativada nesta TV: reative-a na aba Apps (apps do sistema) e tente de novo');
+  }
+  const energia = limpar(await adb.shell('dumpsys power | grep -m1 mWakefulness='));
+  const dormia = /Asleep|Dozing/.test(energia);
+  await adb.shell(`input keyevent KEYCODE_WAKEUP; ${/Dreaming/.test(energia) ? 'input keyevent KEYCODE_DPAD_DOWN;' : ''} sleep 1; am start -W -a android.intent.action.VIEW -d "market://details?id=${pacote}" -p com.android.vending >/dev/null`, 30000);
+  log(`• abrindo ${nome} na Play Store da TV`);
+  try {
+    let apertou = false;
+    for (let i = 0; i < 12 && !apertou; i++) {
+      await new Promise((r) => setTimeout(r, 2500));
+      const textos = await textosDaTela(adb);
+      // (só textos curtos: a descrição do app às vezes contém "não está disponível", preços etc.)
+      const t = (re) => textos.find((x) => x.texto.length <= 80 && re.test(x.texto));
+      if (t(/^(Abrir|Open|Desinstalar|Uninstall)$/i) && await instalado()) { log(`• ${nome} já está instalado`); return { jaInstalado: true }; }
+      if (t(/não está disponível|não é compatível|not available|isn't compatible|item não foi encontrado|not found/i)) {
+        throw new Error(`${nome} não está disponível na Play Store desta TV`);
+      }
+      const preco = t(/^(R\$|US\$|\$)\s?\d/);
+      if (preco) throw new Error(`${nome} é pago (${preco.texto}): a compra precisa ser feita por você na TV ou no celular`);
+      const botao = t(/^(Instalar|Install)$/i);
+      if (botao) { await adb.shell(`input tap ${botao.x} ${botao.y}`); apertou = true; log('• "Instalar" apertado; baixando…'); }
+    }
+    if (!apertou) throw new Error('A página do app não abriu na Play Store da TV (a conta Google da TV está conectada?)');
+    const fim = Date.now() + tempo;
+    let aviso = Date.now();
+    while (Date.now() < fim) {
+      await new Promise((r) => setTimeout(r, 4000));
+      if (await instalado()) { log(`✓ ${nome} instalado`); return { instalado: pacote }; }
+      if (Date.now() - aviso > 30000) { log('  … ainda baixando'); aviso = Date.now(); }
+    }
+    throw new Error(`${nome} não terminou de instalar em ${Math.round(tempo / 60000)} min (confira a Play Store na TV)`);
+  } finally {
+    await adb.shell(`input keyevent KEYCODE_HOME${dormia ? '; sleep 1; input keyevent KEYCODE_SLEEP' : ''}`).catch(() => {});
+  }
+}
+
 export async function dnsPrivado(adb, servidor, log) {
   if (servidor) {
     if (!/^[a-z0-9.-]+$/i.test(servidor)) throw new Error('endereço de DNS inválido');

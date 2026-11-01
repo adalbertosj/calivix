@@ -1,6 +1,6 @@
 {
   "name": "calivix-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Calivix para macOS e Windows",
   "main": "main.js",
@@ -21,12 +21,26 @@
     "appId": "app.calivix.desktop",
     "productName": "Calivix",
     "copyright": "Adalberto Silva",
-    "directories": { "output": "dist.nosync", "buildResources": "build" },
-    "files": ["main.js", "preload.js", "www/**/*"],
+    "directories": {
+      "output": "dist.nosync",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "www/**/*"
+    ],
     "afterPack": "./scripts/after-pack.cjs",
     "mac": {
       "category": "public.app-category.utilities",
-      "target": [{ "target": "dir", "arch": ["universal"] }],
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
       "icon": "build/icon.icns",
       "identity": null,
       "extendInfo": {
@@ -35,10 +49,22 @@
       }
     },
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "build/icon.ico",
       "signAndEditExecutable": false,
-      "extraResources": [{ "from": "build/icon.ico", "to": "icone.ico" }]
+      "extraResources": [
+        {
+          "from": "build/icon.ico",
+          "to": "icone.ico"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
