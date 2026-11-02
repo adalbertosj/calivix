@@ -2,7 +2,7 @@ manifestVersion: 1
 id: adalberto-calivix
 category: automation
 name: Calivix
-version: "1.0.1"
+version: "1.0.2"
 tagline: Ajuste fino para suas TVs Android e Google TV
 description: >-
   Calivix guarda os perfis das suas TVs e aplica os ajustes pela rede.
@@ -27,9 +27,8 @@ description: >-
 
   Tudo fica no seu servidor.
 releaseNotes: >-
-  Instalar app: na aba Apps de cada TV, escolha um app (YouTube, Netflix, Globoplay, Tailscale, VLC e outros)
-  ou cole o link da Play Store, e o Calivix instala pela Play Store da própria TV, de casa ou à distância.
-  O Claude também pode instalar apps pelo MCP. No Mac, o app agora pede a permissão de Rede Local.
+  Fora de casa, o iPhone, o iPad, o Mac e o Windows agora alcançam a TV pelo endereço da Tailnet
+  (quando a TV tem o Tailscale): o selo mostra "Pela Tailnet" e as alterações são aplicadas na hora.
 developer: Adalberto
 website: https://github.com/adalbertosj/calivix
 submitter: Adalberto

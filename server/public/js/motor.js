@@ -51,12 +51,16 @@ export async function descobrir(aoProgredir) {
   return { rede, itens };
 }
 
-// A TV cadastrada está ao alcance deste aparelho agora? (porta aberta + mesmo número de série)
-export async function alcance(tv) {
-  const n = nativo(); if (!n || !tv.ip) return false;
-  const r = await n.sondar([tv.ip], [tv.porta || 5555], 900).catch(() => []);
-  return !!r[0]?.portas?.length;
+// Por qual endereço este aparelho alcança a TV agora: o da rede de casa (preferido, mais rápido) ou o
+// da Tailnet (fora de casa). null se nenhum responde. O número de série é conferido ao conectar.
+export async function enderecoAoAlcance(tv) {
+  const n = nativo(); if (!n) return null;
+  const hosts = [tv.ip, tv.tailnetIp].filter(Boolean);
+  if (!hosts.length) return null;
+  const r = await n.sondar(hosts, [tv.porta || 5555], 1500).catch(() => []);
+  return hosts.find((h) => r.find((x) => x.host === h)?.portas?.length) || null;
 }
+export async function alcance(tv) { return !!(await enderecoAoAlcance(tv)); }
 
 // Lê uma TV nova (sondagem) para cadastrar.
 export async function lerTvNova(ip, porta = 5555, aoPedirPermissao) {
@@ -85,7 +89,7 @@ export async function executarAqui(tarefa, tv, aoLog) {
       log: (l) => { buffer.push(l); aoLog && aoLog(l); },
       salvarRegistro: async (reg) => { await api('POST', `/api/tvs/${tv.id}/relato`, { registro: reg }); },
       apkLauncher, arquivo: async (nome) => new Uint8Array(await (await api('GET', `/api/arquivos/${encodeURIComponent(nome)}`, null, { bruto: true })).arrayBuffer()),
-    }, tv, tarefa);
+    }, { ...tv, ip: (await enderecoAoAlcance(tv)) || tv.ip }, tarefa);
     if (r.captura) r.captura = b64(r.captura);
     clearInterval(timer); await enviarLog();
     return await api('POST', `/api/tarefas/${tarefa.id}/concluir`, { resultado: r });

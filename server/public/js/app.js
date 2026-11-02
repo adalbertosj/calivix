@@ -66,7 +66,7 @@ async function pedir(tv, titulo, acoes, { silencioso = false } = {}) {
     return executarComJanela(tarefa, tv, silencioso);
   }
   const t = await api('POST', '/api/tarefas', { tvId: tv.id, titulo, acoes });
-  if (!silencioso) toast(NATIVO ? 'A TV não está nesta rede. O pedido foi guardado: o servidor ou um aparelho seu aplica quando alcançá-la.' : 'Pedido guardado. O servidor aplica agora se alcançar a TV; senão, um aparelho seu aplica quando estiver na rede dela.', 5000);
+  if (!silencioso) toast(NATIVO ? 'Este aparelho não alcança a TV agora (nem pela rede da casa, nem pela Tailnet). O pedido foi guardado: o servidor ou um aparelho seu aplica quando alcançá-la.' : 'Pedido guardado. O servidor aplica agora se alcançar a TV; senão, um aparelho seu aplica quando estiver na rede dela.', 5000);
   return t;
 }
 
@@ -91,7 +91,8 @@ function executarComJanela(tarefa, tv, silencioso) {
 async function estaAoAlcance(tv, forcar = false) {
   const c = alcanceCache.get(tv.id);
   if (!forcar && c && Date.now() - c.em < 20000) return c.ok;
-  const ok = await motor.alcance(tv).catch(() => false);
+  const end = await motor.enderecoAoAlcance(tv).catch(() => null);
+  const ok = end ? (end === tv.tailnetIp && end !== tv.ip ? 'tailnet' : 'local') : false;
   alcanceCache.set(tv.id, { ok, em: Date.now() });
   return ok;
 }
@@ -109,7 +110,7 @@ async function vigiarPendentes() {
     const x = novos[0];
     const chave = x.tv.id + ':' + x.tarefas.map((t) => t.id).join();
     const sim = await confirmar(`Alterações pendentes para ${x.tv.nome}`,
-      `Você está na mesma rede da <b>${esc(x.tv.nome)}</b>. ${x.tarefas.length} pedido(s) feito(s) antes estão esperando: <br><br>${x.tarefas.map((t) => `• ${esc(t.titulo)} <span class="mini">(${esc(nomeAparelho(t.criadaPor))}, ${quando(t.criadaEm)})</span>`).join('<br>')}<br><br>Aplicar agora, a partir deste aparelho?`, 'Aplicar agora');
+      `Este aparelho alcança a <b>${esc(x.tv.nome)}</b> agora. ${x.tarefas.length} pedido(s) feito(s) antes estão esperando: <br><br>${x.tarefas.map((t) => `• ${esc(t.titulo)} <span class="mini">(${esc(nomeAparelho(t.criadaPor))}, ${quando(t.criadaEm)})</span>`).join('<br>')}<br><br>Aplicar agora, a partir deste aparelho?`, 'Aplicar agora');
     if (sim) aplicarPendentes(x); else recusados.add(chave);
   }
 }
@@ -233,7 +234,7 @@ function telaInicio(el) {
   el.querySelectorAll('[data-tv]').forEach((c) => { c.onclick = () => { location.hash = '#/tv/' + c.dataset.tv; }; });
   ligarSugestoes(el);
   vigiarPendentes();
-  if (NATIVO) for (const tv of E.tvs) estaAoAlcance(tv).then((ok) => { const s = el.querySelector(`[data-alc="${tv.id}"]`); if (s) s.outerHTML = ok ? '<span class="selo ok">Nesta rede</span>' : '<span class="selo">Fora desta rede</span>'; });
+  if (NATIVO) for (const tv of E.tvs) estaAoAlcance(tv).then((ok) => { const s = el.querySelector(`[data-alc="${tv.id}"]`); if (s) s.outerHTML = ok === 'tailnet' ? '<span class="selo ok">Pela Tailnet</span>' : ok ? '<span class="selo ok">Nesta rede</span>' : '<span class="selo">Fora de alcance</span>'; });
 }
 function cartaoTv(tv) {
   const pend = E.tarefas.filter((t) => t.tvId === tv.id && t.status === 'pendente').length;
@@ -327,7 +328,7 @@ function telaTv(el, tv, aba) {
     <span id="alc"></span></div>
     <div class="abas">${ABAS.map(([k, n]) => `<button class="aba ${k === aba ? 'ativa' : ''}" onclick="location.hash='#/tv/${tv.id}/${k}'">${n}${k === 'tarefas' && pend ? ` (${pend})` : ''}</button>`).join('')}</div>
     <div id="corpo"></div>`;
-  if (NATIVO) estaAoAlcance(tv).then((ok) => { const a = $('#alc'); if (a) a.innerHTML = ok ? '<span class="selo ok">Nesta rede: alterações aplicadas na hora</span>' : '<span class="selo av">Fora desta rede: alterações ficam guardadas</span>'; });
+  if (NATIVO) estaAoAlcance(tv).then((ok) => { const a = $('#alc'); if (a) a.innerHTML = ok === 'tailnet' ? '<span class="selo ok">Pela Tailnet: alterações aplicadas na hora</span>' : ok ? '<span class="selo ok">Nesta rede: alterações aplicadas na hora</span>' : '<span class="selo av">Fora de alcance: o servidor aplica se alcançar a TV; senão, fica guardado</span>'; });
   const c = $('#corpo');
   ({ geral: abaGeral, limpeza: abaLimpeza, recursos: abaRecursos, launcher: abaLauncher, apps: abaApps, controle: abaControle, tarefas: abaTarefas, config: abaConfig }[aba] || abaGeral)(c, tv);
 }
