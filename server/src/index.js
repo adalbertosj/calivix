@@ -107,6 +107,8 @@ function aplicarRelato(tvId, r, quem) {
     t.capturaEm = agora();
   }
   if (r.launcher) { t.perfil.launcher = { ...(t.perfil.launcher || {}), instalado: true }; }
+  if (r.launcherConfig) t.perfil.launcher = { ...(t.perfil.launcher || {}), config: r.launcherConfig };
+  if (r.papeis) t.perfil.launcher = { ...(t.perfil.launcher || {}), papeis: r.papeis };
   if (r.desativar) t.perfil.desativados = [...new Set([...(t.perfil.desativados || []), ...r.desativar.desativados])];
   if (r.ativar) t.perfil.desativados = (t.perfil.desativados || []).filter((p) => !r.ativar.ativados.includes(p));
   if (r.restaurar) { t.perfil.desativados = []; t.perfil.launcher = { ...(t.perfil.launcher || {}), instalado: false }; }
@@ -303,18 +305,23 @@ rota('POST', '/api/tarefas/:id/servidor', async (req, s, { id: tid }) => {
   return { ok, tarefa: t };
 });
 
-// Arquivos (APKs enviados para instalar)
+// Arquivos (APKs para instalar e imagens de papel de parede)
+const ARQUIVO_RE = /\.(apk|jpe?g|png|webp)$/i;
+function guardarArquivo(nome, base64) {
+  if (!ARQUIVO_RE.test(nome || '')) throw erro(400, 'Só arquivos .apk, .jpg, .png ou .webp');
+  const n = id() + '-' + path.basename(nome).replace(/[^\w.-]/g, '_');
+  fs.writeFileSync(path.join(DADOS, 'arquivos', n), Buffer.from(base64 || '', 'base64'));
+  return n;
+}
 rota('POST', '/api/arquivos', async (req) => {
   const { nome, base64 } = await corpo(req, 200e6);
-  if (!/\.apk$/i.test(nome || '')) throw erro(400, 'Só arquivos .apk');
-  const n = id() + '-' + path.basename(nome).replace(/[^\w.-]/g, '_');
-  fs.writeFileSync(path.join(DADOS, 'arquivos', n), Buffer.from(base64, 'base64'));
-  return { arquivo: n };
+  return { arquivo: guardarArquivo(nome, base64) };
 });
 rota('GET', '/api/arquivos/:nome', (req, s, { nome }, res) => {
   const f = path.join(DADOS, 'arquivos', path.basename(nome));
   if (!fs.existsSync(f)) throw erro(404, 'Arquivo não encontrado');
-  res.writeHead(200, { 'content-type': 'application/vnd.android.package-archive' }); fs.createReadStream(f).pipe(res); return undefined;
+  const tipo = { '.apk': 'application/vnd.android.package-archive', '.png': 'image/png', '.webp': 'image/webp' }[path.extname(f).toLowerCase()] || 'image/jpeg';
+  res.writeHead(200, { 'content-type': tipo }); fs.createReadStream(f).pipe(res); return undefined;
 });
 
 // Descobertas (sugestões de TVs e TV boxes vistas por cada aparelho)
@@ -348,7 +355,7 @@ const servidor = http.createServer(async (req, res) => {
   res.setHeader('access-control-allow-methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   try {
-    if (url.pathname === '/mcp') return await tratarMcp(req, res, { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo });
+    if (url.pathname === '/mcp') return await tratarMcp(req, res, { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo, guardarArquivo });
     if (url.pathname === '/launcher.apk' && fs.existsSync(APK_LAUNCHER)) { res.writeHead(200, { 'content-type': TIPOS['.apk'] }); return fs.createReadStream(APK_LAUNCHER).pipe(res); }
     if (!url.pathname.startsWith('/api/')) return estatico(req, res, url.pathname);
     for (const r of rotas) {

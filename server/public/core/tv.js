@@ -294,23 +294,54 @@ export async function instalarLauncher(adb, apk, log, { config } = {}) {
   return { estoque };
 }
 
-// Envia o config.json do launcher (dock, colunas, apps ocultos) — mesma via do theme.sh.
+const TEMA_DIR = `/sdcard/Android/data/${LAUNCHER}/files`;
+const TEMA_URI = `content://${LAUNCHER}.theme`;
+
+// Grava um arquivo do tema do launcher ("config.json", "wallpapers/x.jpg"…) pelo provedor dele; se a TV
+// não deixar, copia direto para a pasta do app — mesma via do theme.sh.
+async function gravarNoTema(adb, nome, dados) {
+  const tmp = `/data/local/tmp/calivix-${nome.replace(/\//g, '-')}`;
+  const pasta = nome.includes('/') ? `${TEMA_DIR}/${nome.slice(0, nome.lastIndexOf('/'))}` : TEMA_DIR;
+  await adb.enviarArquivo(dados, tmp);
+  await adb.shell(`rm -f ${TEMA_DIR}/${nome} 2>/dev/null; { o=$(content write --uri ${TEMA_URI}/${nome} < ${tmp} 2>&1) && case "$o" in *'Unsupported operation'*|*'Error while accessing provider'*) false ;; esac; } || { mkdir -p ${pasta} 2>/dev/null; cp ${tmp} ${TEMA_DIR}/${nome} 2>/dev/null; }; rm -f ${tmp}`);
+}
+
+// O config.json que está na TV agora ({} se não houver ou não der para ler).
+export async function lerConfigLauncher(adb) {
+  const t = limpar(await adb.shell(`content read --uri ${TEMA_URI}/config.json 2>/dev/null || cat ${TEMA_DIR}/config.json 2>/dev/null`)).trim();
+  try { const c = JSON.parse(t); return c && typeof c === 'object' ? c : {}; } catch { return {}; }
+}
+
+// Envia o config.json do launcher (dock, colunas, apps ocultos).
 export async function aplicarConfigLauncher(adb, config, log, { reiniciar = true } = {}) {
-  const DIR = `/sdcard/Android/data/${LAUNCHER}/files`;
-  const URI = `content://${LAUNCHER}.theme`;
   const json = new TextEncoder().encode(JSON.stringify(config, null, 2));
   const rev = new TextEncoder().encode(Date.now().toString(36) + Math.random().toString(36).slice(2));
-  const por = async (nome, dados) => {
-    const tmp = `/data/local/tmp/calivix-${nome}`;
-    await adb.enviarArquivo(dados, tmp);
-    await adb.shell(`rm -f ${DIR}/${nome} 2>/dev/null; { o=$(content write --uri ${URI}/${nome} < ${tmp} 2>&1) && case "$o" in *'Unsupported operation'*|*'Error while accessing provider'*) false ;; esac; } || { mkdir -p ${DIR} 2>/dev/null; cp ${tmp} ${DIR}/${nome} 2>/dev/null; }; rm -f ${tmp}`);
-  };
-  await por('config.json', json);
-  await por('theme_revision', rev);
+  await gravarNoTema(adb, 'config.json', json);
+  await gravarNoTema(adb, 'theme_revision', rev);
   if (reiniciar) {
     await adb.shell(`am force-stop ${LAUNCHER}; am start -a android.intent.action.MAIN -c android.intent.category.HOME`);
   }
   log('✓ configuração do launcher aplicada');
+}
+
+// Papéis de parede do launcher: as imagens vão para a coleção do tema (wallpapers/) e o config.json que já
+// está na TV ganha a rotação, sem perder dock, colunas e apps ocultos. imagens: [{ nome, dados }].
+// O brilho colorido do app em foco fica desligado (ele tinge a imagem), salvo se config disser outra coisa.
+export const PAPEL_RE = /^[A-Za-z0-9_.-]+\.(jpe?g|png|webp)$/i;
+export async function enviarPapeis(adb, imagens, log, { minutos = 30, ordem = 'sequential', substituir = false, config = {} } = {}) {
+  for (const i of imagens) if (!PAPEL_RE.test(i.nome) || i.nome.startsWith('.')) throw new Error('Nome de imagem inválido: ' + i.nome + ' (use .jpg, .png ou .webp)');
+  if (substituir) {
+    await adb.shell(`content delete --uri ${TEMA_URI}/wallpapers >/dev/null 2>&1; rm -f ${TEMA_DIR}/wallpapers/* 2>/dev/null`);
+    log('✓ papéis de parede anteriores removidos');
+  }
+  for (const i of imagens) { await gravarNoTema(adb, 'wallpapers/' + i.nome, i.dados); log('✓ ' + i.nome); }
+  const nomes = limpar(await adb.shell(`ls -1 ${TEMA_DIR}/wallpapers 2>/dev/null`)).split('\n').map((s) => s.trim()).filter((s) => PAPEL_RE.test(s));
+  const novo = { ...(await lerConfigLauncher(adb)), ambient_glow: false, ...config,
+    wallpaper: true, wallpaper_rotation_minutes: Math.max(0, Math.min(1440, Math.round(Number(minutos) || 0))),
+    wallpaper_order: ordem === 'shuffle' ? 'shuffle' : 'sequential' };
+  await aplicarConfigLauncher(adb, novo, log);
+  log(nomes.length ? `✓ ${nomes.length} papel(éis) de parede na TV${novo.wallpaper_rotation_minutes ? `, trocando a cada ${novo.wallpaper_rotation_minutes} min` : ''}` : '✓ a TV ficou sem papéis de parede');
+  return { config: novo, papeis: nomes };
 }
 
 export async function captura(adb) { return adb.exec('screencap -p', 30000); }

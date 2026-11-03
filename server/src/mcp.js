@@ -13,6 +13,7 @@ const FERRAMENTAS = [
   { name: 'calivix_listar_pedidos', description: 'Pedidos feitos por voz/texto na área "Claude" do app Calivix. Por padrão só os novos.', inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['novo', 'em_andamento', 'feito', 'recusado', 'todos'] } } } },
   { name: 'calivix_atualizar_pedido', description: 'Muda a situação de um pedido e grava a resposta que o usuário verá no app.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, status: { type: 'string', enum: ['em_andamento', 'feito', 'recusado'] }, resposta: { type: 'string' } }, required: ['id', 'status'] } },
   { name: 'calivix_criar_tarefa', description: 'Cria uma tarefa para uma TV. O servidor executa na hora se alcançar a TV; senão ela fica pendente até um aparelho do usuário estar na mesma rede da TV. Ações: ' + Object.entries(ACOES).map(([k, v]) => `${k} (${v})`).join('; ') + '. Pacotes conhecidos para instalar_loja: ' + LOJA.map((a) => `${a.nome}=${a.pacote}`).join(', ') + ' (outros: o id da página do app na Play Store).', inputSchema: { type: 'object', properties: { tvId: { type: 'string' }, titulo: { type: 'string' }, acoes: { type: 'array', items: { type: 'object', properties: { tipo: { type: 'string', enum: Object.keys(ACOES) }, params: { type: 'object' } }, required: ['tipo'] } }, execucao: { type: 'string', enum: ['auto', 'aparelho'], description: 'auto: servidor ou aparelho; aparelho: só um aparelho na rede da TV' } }, required: ['tvId', 'acoes'] } },
+  { name: 'calivix_enviar_arquivo', description: 'Guarda no servidor um arquivo para uma tarefa (imagem .jpg/.png/.webp para papel_de_parede, ou .apk para instalar_apk) e devolve o nome a usar em params.arquivos / params.arquivo. Imagens em 1920x1080 (a tela das TVs) e com o assunto longe do relógio (alto à esquerda), dos botões (alto à direita) e do dock (terço de baixo).', inputSchema: { type: 'object', properties: { nome: { type: 'string', description: 'ex.: praia.jpg' }, base64: { type: 'string', description: 'conteúdo do arquivo em base64' } }, required: ['nome', 'base64'] } },
   { name: 'calivix_ver_tarefa', description: 'Situação, registro (log) e saídas de uma tarefa.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   { name: 'calivix_captura', description: 'Devolve a última captura de tela da TV (e pede uma nova ao servidor, se ele alcançar a TV).', inputSchema: { type: 'object', properties: { tvId: { type: 'string' }, nova: { type: 'boolean' } }, required: ['tvId'] } },
   { name: 'calivix_catalogo', description: 'Procura nas 407 listas testadas do CleanYourTV (por marca, modelo ou plataforma) e devolve os pacotes de uma lista.', inputSchema: { type: 'object', properties: { busca: { type: 'string' }, id: { type: 'string' } } } },
@@ -21,7 +22,7 @@ const FERRAMENTAS = [
 const texto = (o) => ({ content: [{ type: 'text', text: typeof o === 'string' ? o : JSON.stringify(o, null, 2) }] });
 
 export async function tratarMcp(req, res, ctx) {
-  const { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo } = ctx;
+  const { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo, guardarArquivo } = ctx;
   const auth = req.headers.authorization || '';
   if (auth !== 'Bearer ' + db.ajustes.tokenClaude) {
     res.writeHead(401, { 'content-type': 'application/json' });
@@ -81,6 +82,10 @@ export async function tratarMcp(req, res, ctx) {
         return texto({ id: t.id, status: t.status, executadaPeloServidor: t.assumidaPor === 'servidor' || tentou, resumo: t.resumo, erro: t.erro,
           log: t.log.slice(-40).map((l) => l.l), saidas: t.saidas,
           observacao: t.status === 'pendente' ? 'O servidor não alcança esta TV agora. A tarefa fica guardada e um aparelho do usuário a executa quando estiver na mesma rede da TV.' : undefined });
+      }
+      case 'calivix_enviar_arquivo': {
+        const arquivo = guardarArquivo(String(a.nome || ''), String(a.base64 || '').replace(/^data:[^,]*,/, ''));
+        return texto({ arquivo, bytes: fs.statSync(path.join(DADOS, 'arquivos', arquivo)).size });
       }
       case 'calivix_ver_tarefa': {
         const t = db.tarefas.find((x) => x.id === a.id); if (!t) throw new Error('Tarefa não encontrada');

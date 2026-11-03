@@ -430,12 +430,27 @@ function appsDisponiveis(tv) {
   return [...new Set([...inv.terceiros, ...fixos.filter((p) => inv.pacotes.includes(p))])].filter((p) => !inv.desativados.includes(p) && p !== LAUNCHER);
 }
 
+// Uma foto de qualquer tamanho vira um JPEG 1920x1080 (cobre a tela e corta as sobras pelo centro), em base64:
+// a TV decodifica rápido e o envio fica leve.
+async function imagemParaTv(arquivo) {
+  const img = await createImageBitmap(arquivo);
+  const W = 1920, H = 1080, k = Math.max(W / img.width, H / img.height);
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d'); g.imageSmoothingQuality = 'high';
+  g.drawImage(img, (W - img.width * k) / 2, (H - img.height * k) / 2, img.width * k, img.height * k);
+  img.close?.();
+  return cv.toDataURL('image/jpeg', 0.9).split(',')[1];
+}
+
 function abaLauncher(c, tv) {
   if (precisaLer(c, tv)) return;
   const inv = tv.inventario;
   const instalado = inv.home?.startsWith(LAUNCHER + '/');
   const cfg = tv.perfil?.launcher?.config || { dock_apps: appsDisponiveis(tv).slice(0, 4), hidden_apps: inv.pacotes.includes('com.tcl.tv') ? ['com.tcl.tv', 'com.tcl.suspension'] : [], columns: 4, rows_below_dock: 0, ...(inv.pacotes.includes('com.tcl.tv') ? { live_tv_package: 'com.tcl.tv' } : {}) };
   let dock = [...(cfg.dock_apps || [])];
+  const papeis = tv.perfil?.launcher?.papeis || [];
+  const enviarPapeis = async (arquivos, substituir) => pedir(tv, arquivos.length ? `Papel de parede (${arquivos.length})` : 'Tirar papéis de parede', [{ tipo: 'papel_de_parede', params: {
+    arquivos, substituir, minutos: Number($('#pMin').value), ordem: $('#pOrd').value } }, { tipo: 'tecla', params: { tecla: 'HOME' } }, { tipo: 'captura' }]);
   const desenhar = () => {
     const disp = appsDisponiveis(tv).filter((p) => !dock.includes(p));
     c.innerHTML = `<div class="cartao" style="margin-bottom:14px"><div class="linha"><div style="flex:1;min-width:220px"><h3>${instalado ? 'Launcher limpo ativo' : 'Tela inicial sem anúncios'}</h3>
@@ -447,7 +462,13 @@ function abaLauncher(c, tv) {
       <label class="mini">Colunas <select class="ent" id="col" style="width:90px;display:inline-block">${[4, 5, 6, 7].map((n) => `<option ${n === (cfg.columns || 4) ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>
       <div class="linha" style="margin-top:18px"><span class="espaco"></span>
       ${instalado ? '<button class="bt pri" id="salvar">Salvar dock na TV</button>' : '<button class="bt grad" id="instalar">Instalar launcher limpo</button>'}</div>
-      ${instalado ? '' : `<p class="mini" style="margin-top:14px">O Calivix guarda o estado atual antes, desativa a tela do Google TV só depois de o launcher abrir, e devolve a original se a TV não aceitar. ${inv.pacotes.includes(SETUP) && !inv.desativados.includes(SETUP) ? 'Dica: faça a <b>Limpeza</b> primeiro (ela desativa o assistente de configuração, que em Google TV disputa a tela inicial).' : ''}</p>`}`;
+      ${instalado ? '' : `<p class="mini" style="margin-top:14px">O Calivix guarda o estado atual antes, desativa a tela do Google TV só depois de o launcher abrir, e devolve a original se a TV não aceitar. ${inv.pacotes.includes(SETUP) && !inv.desativados.includes(SETUP) ? 'Dica: faça a <b>Limpeza</b> primeiro (ela desativa o assistente de configuração, que em Google TV disputa a tela inicial).' : ''}</p>`}
+      ${instalado ? `<div class="cartao" style="margin-top:18px"><h3 style="margin:0 0 4px">Papel de parede</h3>
+        <p class="mini" style="margin:0 0 12px">Fotos ou imagens atrás do dock e no protetor de tela do relógio. O Calivix ajusta cada uma para 1920×1080; deixe o assunto longe do relógio (alto à esquerda) e do dock (embaixo). ${papeis.length ? `Na TV agora: ${papeis.map(esc).join(', ')}.` : ''}</p>
+        <div class="linha" style="flex-wrap:wrap;gap:10px"><label class="mini">Trocar <select class="ent" id="pMin" style="width:150px;display:inline-block">${[[0, 'nunca (fixo)'], [15, 'a cada 15 min'], [30, 'a cada 30 min'], [60, 'a cada hora'], [180, 'a cada 3 horas']].map(([v, n]) => `<option value="${v}" ${v === (cfg.wallpaper_rotation_minutes ?? 30) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label class="mini">Ordem <select class="ent" id="pOrd" style="width:150px;display:inline-block"><option value="sequential">em sequência</option><option value="shuffle" ${cfg.wallpaper_order === 'shuffle' ? 'selected' : ''}>aleatória</option></select></label>
+        <label class="linha mini"><input type="checkbox" class="caixa" id="pSub"> Substituir os que já estão na TV</label>
+        <span class="espaco"></span>${papeis.length ? '<button class="bt peq" id="pTirar">Tirar todos</button>' : ''}<label class="bt pri">Enviar imagens…<input type="file" accept="image/jpeg,image/png,image/webp" multiple id="pArq" hidden></label></div></div>` : ''}`;
     c.querySelectorAll('[data-esq]').forEach((b) => { b.onclick = () => { const i = +b.dataset.esq; if (i > 0) [dock[i - 1], dock[i]] = [dock[i], dock[i - 1]]; desenhar(); }; });
     c.querySelectorAll('[data-dir]').forEach((b) => { b.onclick = () => { const i = +b.dataset.dir; if (i < dock.length - 1) [dock[i + 1], dock[i]] = [dock[i], dock[i + 1]]; desenhar(); }; });
     c.querySelectorAll('[data-tira]').forEach((b) => { b.onclick = () => { dock.splice(+b.dataset.tira, 1); desenhar(); }; });
@@ -460,6 +481,22 @@ function abaLauncher(c, tv) {
       if (!await confirmar('Instalar o launcher limpo?', 'A tela inicial do Google TV será desativada (não desinstalada) e o launcher limpo vira a tela inicial. Os botões Netflix/Prime/YouTube do controle deixam de abrir os apps. Dá para desfazer em Ajustes da TV › Restaurar tudo.', 'Instalar')) return;
       await salvarPerfil();
       pedir(tv, 'Instalar launcher limpo', [{ tipo: 'instalar_launcher', params: { config: novaCfg() } }, { tipo: 'captura' }]);
+    });
+    $('#pTirar') && ($('#pTirar').onclick = async () => {
+      if (await confirmar('Tirar os papéis de parede?', 'As imagens saem da TV e a tela inicial volta ao fundo do tema.', 'Tirar')) enviarPapeis([], true);
+    });
+    $('#pArq') && ($('#pArq').onchange = async (e) => {
+      const fs = [...e.target.files]; if (!fs.length) return;
+      toast(`Preparando ${fs.length} imagem(ns)…`);
+      try {
+        const arquivos = [];
+        for (const f of fs) {
+          const base64 = await imagemParaTv(f);
+          const nome = f.name.replace(/\.[^.]*$/, '').normalize('NFD').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'imagem';
+          arquivos.push((await api('POST', '/api/arquivos', { nome: nome + '.jpg', base64 })).arquivo);
+        }
+        enviarPapeis(arquivos, $('#pSub').checked);
+      } catch (err) { toast('Não deu para enviar: ' + err.message); }
     });
   };
   desenhar();

@@ -12,7 +12,8 @@ export const ACOES = {
   restaurar: 'Desfazer tudo pelo registro do estado anterior',
   conferir: 'Ver o que uma atualização de firmware religou',
   instalar_launcher: 'Instalar o launcher limpo e torná-lo a tela inicial — { config }',
-  config_launcher: 'Mudar dock, colunas e apps ocultos do launcher — { config }',
+  config_launcher: 'Mudar dock, colunas e apps ocultos do launcher — { config } (troca o config.json inteiro)',
+  papel_de_parede: 'Papéis de parede do launcher — { arquivos: [] (imagens enviadas ao servidor antes), minutos: 30 (troca; 0 = fixo), ordem: "sequential" | "shuffle", substituir: false (apaga os que já estão), config: {} (outras chaves do tema) }; mantém dock e apps ocultos',
   captura: 'Tirar uma captura da tela da TV',
   tecla: 'Apertar uma tecla do controle — { tecla: "HOME" | "OK" | … }',
   abrir_app: 'Abrir um aplicativo — { pacote }',
@@ -74,7 +75,15 @@ export async function executarTarefa(ctx, tvCad, tarefa) {
           resultado.launcher = await tv.instalarLauncher(adb, apk, log, { config: p.config });
           break;
         }
-        case 'config_launcher': await tv.aplicarConfigLauncher(adb, p.config || {}, log); break;
+        case 'config_launcher': await tv.aplicarConfigLauncher(adb, p.config || {}, log); resultado.launcherConfig = p.config || {}; break;
+        case 'papel_de_parede': {
+          // no servidor o arquivo leva um prefixo único ("<id>-nome.jpg"); na TV fica só o nome
+          const imagens = [];
+          for (const a of p.arquivos || []) imagens.push({ nome: String(a).replace(/^[0-9a-f]{16}-/, ''), dados: await ctx.arquivo(a) });
+          const r = await tv.enviarPapeis(adb, imagens, log, p);
+          resultado.launcherConfig = r.config; resultado.papeis = r.papeis;
+          break;
+        }
         case 'captura': resultado.captura = await tv.captura(adb); log('✓ captura feita'); break;
         case 'tecla': await tv.tecla(adb, p.tecla); log('✓ tecla ' + p.tecla); break;
         case 'abrir_app': await tv.abrirApp(adb, p.pacote); log('✓ abriu ' + p.pacote); break;

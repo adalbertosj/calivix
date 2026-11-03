@@ -2,7 +2,7 @@ manifestVersion: 1
 id: adalberto-calivix
 category: automation
 name: Calivix
-version: "1.0.2"
+version: "1.0.3"
 tagline: Ajuste fino para suas TVs Android e Google TV
 description: >-
   Calivix guarda os perfis das suas TVs e aplica os ajustes pela rede.
@@ -27,8 +27,9 @@ description: >-
 
   Tudo fica no seu servidor.
 releaseNotes: >-
-  Fora de casa, o iPhone, o iPad, o Mac e o Windows agora alcançam a TV pelo endereço da Tailnet
-  (quando a TV tem o Tailscale): o selo mostra "Pela Tailnet" e as alterações são aplicadas na hora.
+  Papel de parede na tela inicial: em Tela inicial › Papel de parede, envie fotos (o Calivix ajusta
+  cada uma para a tela da TV), escolha de quanto em quanto tempo elas trocam e a ordem. Dock e apps
+  ocultos continuam como estão. O Claude também pode criar e enviar papéis de parede.
 developer: Adalberto
 website: https://github.com/adalbertosj/calivix
 submitter: Adalberto
