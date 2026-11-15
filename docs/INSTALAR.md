@@ -49,3 +49,6 @@ claude mcp add --transport http calivix https://umbrel-home.tail16dbfe.ts.net:84
 Configurações › Sistema › Sobre › aperte OK em *Build* 7 vezes › Opções do desenvolvedor › ligue
 **Depuração USB** (e **ADB pela rede**, se houver). No app: Descobrir › Adicionar. Na TV, marque
 **Sempre permitir**.
+
+Algumas TV boxes abrem o ADB numa porta própria em vez da 5555 (a BTV B13 usa a 5188; ela aparece no
+mDNS como `_adb._tcp`, ex.: `dns-sd -B _adb._tcp`). Nesse caso, em Adicionar TV escreva `IP:porta`.

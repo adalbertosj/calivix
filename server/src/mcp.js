@@ -9,6 +9,7 @@ import { RECURSOS } from '../public/core/tv.js';
 
 const FERRAMENTAS = [
   { name: 'calivix_listar_tvs', description: 'Lista as TVs cadastradas no Calivix com modelo, rede, endereço, situação do launcher e tarefas pendentes.', inputSchema: { type: 'object', properties: {} } },
+  { name: 'calivix_adicionar_tv', description: 'Cadastra uma TV ou TV box (com a depuração ADB já ligada) e faz a leitura inicial (modelo, apps e captura) se o servidor a alcançar; senão a leitura fica pendente para um aparelho na rede dela. Na primeira conexão a TV pede "Permitir depuração?" na tela. Se já houver uma TV com o mesmo número de série, atualiza o cadastro dela.', inputSchema: { type: 'object', properties: { nome: { type: 'string' }, local: { type: 'string' }, ip: { type: 'string', description: 'IP na rede de casa, ex.: 192.168.0.43' }, porta: { type: 'integer', description: 'porta do ADB (padrão 5555; algumas TV boxes usam outra, ex.: 5188)' }, tailnetIp: { type: 'string', description: 'opcional, IP 100.x se a TV tiver Tailscale' } }, required: ['nome', 'ip'] } },
   { name: 'calivix_detalhes_tv', description: 'Detalhes de uma TV: sondagem (modelo, Android, firmware), apps instalados e desativados, perfil e recursos.', inputSchema: { type: 'object', properties: { tvId: { type: 'string' } }, required: ['tvId'] } },
   { name: 'calivix_listar_pedidos', description: 'Pedidos feitos por voz/texto na área "Claude" do app Calivix. Por padrão só os novos.', inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['novo', 'em_andamento', 'feito', 'recusado', 'todos'] } } } },
   { name: 'calivix_atualizar_pedido', description: 'Muda a situação de um pedido e grava a resposta que o usuário verá no app.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, status: { type: 'string', enum: ['em_andamento', 'feito', 'recusado'] }, resposta: { type: 'string' } }, required: ['id', 'status'] } },
@@ -22,7 +23,7 @@ const FERRAMENTAS = [
 const texto = (o) => ({ content: [{ type: 'text', text: typeof o === 'string' ? o : JSON.stringify(o, null, 2) }] });
 
 export async function tratarMcp(req, res, ctx) {
-  const { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo, guardarArquivo } = ctx;
+  const { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo, guardarArquivo, cadastrarTv } = ctx;
   const auth = req.headers.authorization || '';
   if (auth !== 'Bearer ' + db.ajustes.tokenClaude) {
     res.writeHead(401, { 'content-type': 'application/json' });
@@ -52,9 +53,19 @@ export async function tratarMcp(req, res, ctx) {
     const a = m.params?.arguments || {};
     switch (m.params?.name) {
       case 'calivix_listar_tvs': return texto(Object.values(db.tvs).map((t) => ({
-        id: t.id, nome: t.nome, local: t.local, ip: t.ip, tailnetIp: t.tailnetIp, rede: t.rede, modelo: t.sondagem ? `${t.sondagem.fabricante} ${t.sondagem.modelo} (${t.sondagem.plataforma}), Android ${t.sondagem.android}` : null,
+        id: t.id, nome: t.nome, local: t.local, ip: t.ip, porta: t.porta || 5555, tailnetIp: t.tailnetIp, rede: t.rede, modelo: t.sondagem ? `${t.sondagem.fabricante} ${t.sondagem.modelo} (${t.sondagem.plataforma}), Android ${t.sondagem.android}` : null,
         launcherLimpo: !!t.perfil?.launcher?.instalado, desativados: (t.perfil?.desativados || []).length, visto: t.visto,
         pendentes: db.tarefas.filter((x) => x.tvId === t.id && x.status === 'pendente').length })));
+      case 'calivix_adicionar_tv': {
+        const tv = cadastrarTv({ nome: a.nome, local: a.local, ip: String(a.ip || '').trim(), porta: a.porta, tailnetIp: a.tailnetIp });
+        const t = novaTarefa({ tvId: tv.id, titulo: 'Leitura inicial', acoes: [{ tipo: 'sondar' }, { tipo: 'inventario' }, { tipo: 'captura' }], criadaPor: 'claude' });
+        await tentarNoServidor(t);
+        for (let i = 0; i < 300 && t.status === 'executando'; i++) await new Promise((r) => setTimeout(r, 500));
+        const cad = db.tvs[tv.id];
+        return texto({ tvId: tv.id, nome: cad.nome, ip: cad.ip, porta: cad.porta, leitura: { tarefa: t.id, status: t.status, erro: t.erro, log: t.log.slice(-15).map((l) => l.l) },
+          modelo: cad.sondagem ? `${cad.sondagem.fabricante} ${cad.sondagem.modelo} (${cad.sondagem.plataforma}), Android ${cad.sondagem.android}` : null,
+          observacao: t.status === 'pendente' ? 'O servidor não alcança esta TV agora; a leitura fica guardada para um aparelho na rede dela.' : undefined });
+      }
       case 'calivix_detalhes_tv': {
         const t = db.tvs[a.tvId]; if (!t) throw new Error('TV não encontrada');
         const inv = t.inventario || {};

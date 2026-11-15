@@ -7,6 +7,14 @@ import { carregarCatalogo, sugerirListas } from '../core/catalogo.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// "192.168.0.43" ou "192.168.0.4:5188" (TV boxes que abrem o ADB numa porta própria) → { ip, porta } ou null.
+const lerEndereco = (s) => {
+  const m = String(s || '').trim().match(/^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?$/);
+  if (!m) return null;
+  const porta = Number(m[2] || 5555);
+  return porta >= 1 && porta <= 65535 ? { ip: m[1], porta } : null;
+};
+const mostrarEndereco = (tv) => (tv.ip || '') + (tv.porta && tv.porta !== 5555 ? ':' + tv.porta : '');
 const raiz = $('#raiz');
 let E = null;          // estado vindo do servidor
 let catalogo = null;
@@ -268,23 +276,25 @@ function adicionarTv(pre = {}) {
     <p class="sub">${NATIVO ? 'Este aparelho precisa estar na mesma rede da TV.' : 'O servidor vai ler a TV se alcançá-la (rede de casa ou Tailnet). Pelo app no celular ou no computador, a leitura é feita direto do aparelho.'}</p>
     <div class="campo"><label>Nome</label><input class="ent" id="nm" value="${esc(pre.nome || '')}" placeholder="TV da Sala"></div>
     <div class="campo"><label>Local</label><input class="ent" id="lc" placeholder="Casa, Sala, Quarto, Casa da praia…"></div>
-    <div class="campo"><label>Endereço IP da TV</label><input class="ent" id="ip" inputmode="decimal" value="${esc(pre.ip || '')}" placeholder="192.168.0.43"></div>
+    <div class="campo"><label>Endereço IP da TV</label><input class="ent" id="ip" inputmode="decimal" value="${esc(pre.ip || '')}" placeholder="192.168.0.43">
+      <div class="mini" style="margin-top:6px">A porta padrão é 5555. Se a TV box usar outra, escreva junto: <b>192.168.0.4:5188</b>.</div></div>
     <details class="mini" style="margin-bottom:14px"><summary>Antes: ligue a depuração na TV</summary><p>Configurações › Sistema › Sobre › aperte OK em <b>Build</b> 7 vezes. Volte › Opções do desenvolvedor › ligue <b>Depuração USB</b> (e <b>Depuração ADB pela rede</b>, se houver). Na primeira conexão, a TV pergunta <b>"Permitir depuração USB?"</b>: marque <b>Sempre permitir</b>.</p></details>
     <div class="linha"><span class="espaco"></span><button class="bt" data-c>Cancelar</button><button class="bt pri" data-ok>Adicionar e ler a TV</button></div>
     <div class="mini" id="msg" style="margin-top:10px"></div>`, (j, fechar) => {
     $('[data-c]', j).onclick = fechar;
     $('[data-ok]', j).onclick = async () => {
-      const ip = $('#ip', j).value.trim();
-      if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return toast('Informe o IP da TV (ex.: 192.168.0.43)');
+      const end = lerEndereco($('#ip', j).value);
+      if (!end) return toast('Informe o IP da TV (ex.: 192.168.0.43 ou 192.168.0.4:5188)');
+      const { ip, porta } = end;
       const msg = $('#msg', j);
       $('[data-ok]', j).disabled = true;
       try {
         let sond = null;
         if (NATIVO) {
           msg.textContent = 'Conectando à TV…';
-          sond = await motor.lerTvNova(ip, 5555, () => { msg.innerHTML = '<b>Olhe a TV:</b> confirme "Permitir depuração USB?" marcando <b>Sempre permitir</b>.'; });
+          sond = await motor.lerTvNova(ip, porta, () => { msg.innerHTML = '<b>Olhe a TV:</b> confirme "Permitir depuração USB?" marcando <b>Sempre permitir</b>.'; });
         }
-        const tv = await api('POST', '/api/tvs', { nome: $('#nm', j).value.trim() || sond?.modelo || 'TV', local: $('#lc', j).value.trim(), ip, castId: pre.castId, serial: sond?.serial, sondagem: sond });
+        const tv = await api('POST', '/api/tvs', { nome: $('#nm', j).value.trim() || sond?.modelo || 'TV', local: $('#lc', j).value.trim(), ip, porta, castId: pre.castId, serial: sond?.serial, sondagem: sond });
         fechar();
         await atualizar();
         location.hash = '#/tv/' + tv.id;
@@ -324,7 +334,7 @@ const ABAS = [['geral', 'Visão geral'], ['limpeza', 'Limpeza'], ['recursos', 'R
 function telaTv(el, tv, aba) {
   const pend = E.tarefas.filter((t) => t.tvId === tv.id && t.status === 'pendente').length;
   el.innerHTML = `<div class="linha" style="margin-bottom:6px"><a href="#/" class="bt peq">${I.volta} TVs</a></div>
-    <div class="cabeca"><div><h1>${esc(tv.nome)}</h1><p class="sub" style="margin:0">${esc([tv.local, tv.sondagem && `${tv.sondagem.fabricante} ${tv.sondagem.modelo} (${tv.sondagem.plataforma})`, tv.ip].filter(Boolean).join(' · '))}</p></div>
+    <div class="cabeca"><div><h1>${esc(tv.nome)}</h1><p class="sub" style="margin:0">${esc([tv.local, tv.sondagem && `${tv.sondagem.fabricante} ${tv.sondagem.modelo} (${tv.sondagem.plataforma})`, mostrarEndereco(tv)].filter(Boolean).join(' · '))}</p></div>
     <span id="alc"></span></div>
     <div class="abas">${ABAS.map(([k, n]) => `<button class="aba ${k === aba ? 'ativa' : ''}" onclick="location.hash='#/tv/${tv.id}/${k}'">${n}${k === 'tarefas' && pend ? ` (${pend})` : ''}</button>`).join('')}</div>
     <div id="corpo"></div>`;
@@ -347,7 +357,7 @@ function abaGeral(c, tv) {
     <div class="cartao"><div class="tv"><div class="tela" style="${tv.temCaptura ? `background-image:url('${capturaUrl(tv)}')` : ''};cursor:default">${tv.temCaptura ? '' : I.tv}</div></div>
       <div class="linha"><span class="mini">Captura ${quando(tv.capturaEm)}</span><span class="espaco"></span><button class="bt peq" id="cap">${I.att} Nova captura</button></div></div>
     <div class="cartao"><h3>Sobre esta TV</h3>
-      <div class="lista" style="margin-top:10px">${[['Modelo', `${s.fabricante || '—'} ${s.modelo || ''}`], ['Plataforma', s.plataforma], ['Android', s.android && `${s.android} (SDK ${s.sdk})`], ['Firmware', s.firmware], ['Rede', tv.rede], ['Endereço', tv.ip + (tv.tailnetIp ? ' · Tailnet ' + tv.tailnetIp : '')], ['Memória', s.ramMB && s.ramMB + ' MB'], ['Apps', inv && `${inv.pacotes.length} instalados · ${inv.desativados.length} desativados`], ['Tela inicial', inv?.home?.split('/')[0] && nomeAmigavel(inv.home.split('/')[0])]]
+      <div class="lista" style="margin-top:10px">${[['Modelo', `${s.fabricante || '—'} ${s.modelo || ''}`], ['Plataforma', s.plataforma], ['Android', s.android && `${s.android} (SDK ${s.sdk})`], ['Firmware', s.firmware], ['Rede', tv.rede], ['Endereço', mostrarEndereco(tv) + (tv.tailnetIp ? ' · Tailnet ' + tv.tailnetIp : '')], ['Memória', s.ramMB && s.ramMB + ' MB'], ['Apps', inv && `${inv.pacotes.length} instalados · ${inv.desativados.length} desativados`], ['Tela inicial', inv?.home?.split('/')[0] && nomeAmigavel(inv.home.split('/')[0])]]
         .filter(([, v]) => v).map(([k, v]) => `<div class="item"><div class="txt"><div class="desc">${k}</div><div class="tit">${esc(v)}</div></div></div>`).join('')}</div>
       <div class="linha" style="margin-top:14px"><button class="bt" id="ler">${I.att} Ler a TV de novo</button><button class="bt" id="conf">Conferir após atualização</button></div></div></div>
     ${s.adbSeguro === '0' ? '<div class="faixa" style="margin-top:14px">Esta TV aceita ADB pela rede sem pedir permissão. Desligue a depuração quando não estiver usando.</div>' : ''}`;
@@ -576,13 +586,17 @@ function abaTarefas(c, tv) {
 function abaConfig(c, tv) {
   c.innerHTML = `<div class="cartao" style="max-width:640px"><div class="campo"><label>Nome</label><input class="ent" id="nm" value="${esc(tv.nome)}"></div>
     <div class="campo"><label>Local</label><input class="ent" id="lc" value="${esc(tv.local || '')}" placeholder="Casa, Sala, Casa da praia…"></div>
-    <div class="campo"><label>Endereço na rede da TV</label><input class="ent" id="ip" value="${esc(tv.ip || '')}"></div>
+    <div class="campo"><label>Endereço na rede da TV (com <b>:porta</b> se não for 5555)</label><input class="ent" id="ip" value="${esc(mostrarEndereco(tv))}"></div>
     <div class="campo"><label>Endereço na Tailnet (opcional, se a TV tiver o app Tailscale)</label><input class="ent" id="ts" value="${esc(tv.tailnetIp || '')}" placeholder="100.x.y.z"></div>
     <div class="linha"><span class="espaco"></span><button class="bt pri" id="salvar">Salvar</button></div></div>
     <h2>Desfazer</h2><div class="cartao" style="max-width:640px"><p class="sub">${tv.registro ? `Estado anterior guardado em ${new Date(tv.registro.criadoEm).toLocaleString('pt-BR')} (${tv.registro.pacotes} pacotes).` : 'Ainda não há estado anterior guardado (nada foi alterado pelo Calivix).'}</p>
     <button class="bt perigo" id="rest" ${tv.registro ? '' : 'disabled'}>Restaurar tudo como estava</button></div>
     <h2>Remover</h2><div class="cartao" style="max-width:640px"><p class="sub">Tira a TV do Calivix. Nada muda na TV.</p><button class="bt perigo" id="rem">Remover esta TV</button></div>`;
-  $('#salvar').onclick = async () => { await api('PATCH', `/api/tvs/${tv.id}`, { nome: $('#nm').value, local: $('#lc').value, ip: $('#ip').value.trim(), tailnetIp: $('#ts').value.trim() }); toast('Salvo'); atualizar(); };
+  $('#salvar').onclick = async () => {
+    const end = lerEndereco($('#ip').value);
+    if (!end) return toast('Endereço inválido (ex.: 192.168.0.43 ou 192.168.0.4:5188)');
+    await api('PATCH', `/api/tvs/${tv.id}`, { nome: $('#nm').value, local: $('#lc').value, ip: end.ip, porta: end.porta, tailnetIp: $('#ts').value.trim() }); toast('Salvo'); atualizar();
+  };
   $('#rest').onclick = async () => { if (await confirmar('Restaurar tudo?', 'Reativa tudo o que estava ativado antes do Calivix e devolve a tela inicial original.', 'Restaurar', true)) pedir(tv, 'Restaurar tudo', [{ tipo: 'restaurar' }, { tipo: 'captura' }]); };
   $('#rem').onclick = async () => { if (await confirmar('Remover ' + tv.nome + '?', 'O perfil, as tarefas pendentes e a captura serão apagados do servidor. A TV não é alterada.', 'Remover', true)) { await api('DELETE', `/api/tvs/${tv.id}`); location.hash = '#/'; atualizar(); } };
 }

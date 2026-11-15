@@ -48,8 +48,9 @@ export async function sondar(adb) {
   const saida = limpar(await adb.shell(props.map((p) => `echo "${p}=$(getprop ${p})"`).join('; ')));
   const v = {};
   for (const l of saida.split('\n')) { const i = l.indexOf('='); if (i > 0) v[l.slice(0, i)] = l.slice(i + 1).trim(); }
-  const extra = limpar(await adb.shell("wm size | tail -n 1; cat /proc/meminfo | head -n 1; dumpsys wifi | grep -m1 -o 'mWifiInfo SSID: [^,]*'; ip -o -4 addr show wlan0 eth0 2>/dev/null | head -n 2; cat /sys/class/net/wlan0/address 2>/dev/null"));
-  const ssid = (extra.match(/SSID: "?([^",]*)"?/) || [])[1] || '';
+  const extra = limpar(await adb.shell("wm size | tail -n 1; cat /proc/meminfo | head -n 1; dumpsys wifi 2>/dev/null | grep -m1 -o 'mWifiInfo SSID: [^,]*'; ip -o -4 addr show wlan0 eth0 2>/dev/null | head -n 2; cat /sys/class/net/wlan0/address 2>/dev/null"));
+  // só a linha do SSID; "<unknown ssid>" = sem Wi-Fi (box no cabo)
+  const ssid = ((extra.match(/SSID: "?([^",\n]*)"?/) || [])[1] || '').replace(/^<unknown ssid>$/i, '').trim();
   const ram = Number((extra.match(/MemTotal:\s+(\d+)/) || [])[1] || 0);
   const mac = (extra.match(/^([0-9a-f]{2}(:[0-9a-f]{2}){5})$/m) || [])[1] || '';
   const tela = (extra.match(/size: (\d+x\d+)/) || [])[1] || '';

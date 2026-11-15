@@ -230,23 +230,32 @@ rota('PATCH', '/api/aparelhos/:id', async (req, s, { id: a }) => {
 });
 
 // TVs
-rota('POST', '/api/tvs', async (req, s) => {
-  const b = await corpo(req);
+// Porta do ADB: 5555 por padrão; algumas TV boxes abrem outra (ex.: 5188).
+function portaValida(p, atual = 5555) {
+  if (p === undefined || p === null || p === '') return atual;
+  const n = Number(p);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) throw erro(400, 'Porta inválida: ' + p);
+  return n;
+}
+rota('POST', '/api/tvs', async (req) => cadastrarTv(await corpo(req)));
+function cadastrarTv(b) {
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(String(b.ip || ''))) throw erro(400, 'IP inválido: ' + (b.ip || '(vazio)'));
   // mesma TV (pelo número de série) não é cadastrada duas vezes
   const existente = b.serial && Object.values(db.tvs).find((t) => t.serial === b.serial);
   const t = existente || { id: id(), criadaEm: agora(), perfil: { desativados: [], recursos: {}, launcher: { instalado: false, config: null } } };
   Object.assign(t, {
     nome: String(b.nome || t.nome || 'TV').slice(0, 60), local: String(b.local ?? t.local ?? '').slice(0, 60),
-    ip: b.ip || t.ip, porta: Number(b.porta || t.porta || 5555), serial: b.serial || t.serial || '', castId: b.castId || t.castId || '',
+    ip: b.ip || t.ip, porta: portaValida(b.porta, t.porta || 5555), serial: b.serial || t.serial || '', castId: b.castId || t.castId || '',
     tailnetIp: b.tailnetIp ?? t.tailnetIp ?? '', sondagem: b.sondagem || t.sondagem || null, rede: b.rede || t.rede || b.sondagem?.rede || '',
     lista: b.lista ?? t.lista ?? null,
   });
   db.tvs[t.id] = t; banco.gravar(); avisar('tvs', { tvId: t.id });
   return t;
-});
+}
 rota('PATCH', '/api/tvs/:id', async (req, s, { id: tvId }) => {
   const t = db.tvs[tvId]; if (!t) throw erro(404, 'TV não encontrada');
   const b = await corpo(req);
+  if (b.porta !== undefined) b.porta = portaValida(b.porta);
   for (const k of ['nome', 'local', 'ip', 'porta', 'tailnetIp', 'lista']) if (b[k] !== undefined) t[k] = b[k];
   if (b.perfil) t.perfil = { ...t.perfil, ...b.perfil };
   banco.gravar(); avisar('tvs', { tvId }); return t;
@@ -355,7 +364,7 @@ const servidor = http.createServer(async (req, res) => {
   res.setHeader('access-control-allow-methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   try {
-    if (url.pathname === '/mcp') return await tratarMcp(req, res, { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo, guardarArquivo });
+    if (url.pathname === '/mcp') return await tratarMcp(req, res, { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo, guardarArquivo, cadastrarTv });
     if (url.pathname === '/launcher.apk' && fs.existsSync(APK_LAUNCHER)) { res.writeHead(200, { 'content-type': TIPOS['.apk'] }); return fs.createReadStream(APK_LAUNCHER).pipe(res); }
     if (!url.pathname.startsWith('/api/')) return estatico(req, res, url.pathname);
     for (const r of rotas) {
