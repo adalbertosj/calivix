@@ -24,6 +24,7 @@ export function abrirBanco(dir) {
   dados.tarefas ||= [];
   dados.pedidos ||= [];
   dados.descobertas ||= {};
+  dados.presets ||= [];
   dados.ajustes ||= { redesDoServidor: '', tokenClaude: '' };
 
   let timer = null;

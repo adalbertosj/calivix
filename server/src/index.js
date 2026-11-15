@@ -10,6 +10,7 @@ import { transporteNode, sondarPorta } from './transporte-node.js';
 import { gerarChave } from '../public/core/adb.js';
 import { executarTarefa, ACOES } from '../public/core/executor.js';
 import { tratarMcp } from './mcp.js';
+import { normalizarPreset, acoesDoPreset, presetDaTv } from '../public/core/presets.js';
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const PUBLICO = path.resolve(AQUI, '../public');
@@ -63,7 +64,7 @@ function estado(sessao) {
     temCaptura: fs.existsSync(path.join(DADOS, 'capturas', t.id + '.png')) }));
   return {
     versao: VERSAO, aparelho: sessao.aparelho, aparelhos: db.aparelhos, tvs,
-    tarefas: db.tarefas.slice(-300), pedidos: db.pedidos.slice(-200), descobertas: db.descobertas,
+    tarefas: db.tarefas.slice(-300), pedidos: db.pedidos.slice(-200), descobertas: db.descobertas, presets: db.presets,
     ajustes: { redesDoServidor: db.ajustes.redesDoServidor }, acoes: ACOES,
   };
 }
@@ -90,6 +91,8 @@ function resumir(r) {
   if (r.launcher) p.push('launcher limpo instalado');
   if (r.conferir) p.push(r.conferir.religados.length ? `${r.conferir.religados.length} religados pelo firmware` : 'nada religado');
   if (r.instalados) p.push(r.instalados.length + ' app(s) instalado(s)');
+  if (r.papeis) p.push(r.papeis.length + ' papel(éis) de parede');
+  if (r.avisos) p.push(r.avisos.length + ' aviso(s)');
   if (r.captura) p.push('captura de tela');
   return p.join(' · ') || 'concluída';
 }
@@ -326,12 +329,52 @@ rota('POST', '/api/arquivos', async (req) => {
   const { nome, base64 } = await corpo(req, 200e6);
   return { arquivo: guardarArquivo(nome, base64) };
 });
+rota('GET', '/api/arquivos', () => ({ arquivos: listarArquivos() }));
 rota('GET', '/api/arquivos/:nome', (req, s, { nome }, res) => {
   const f = path.join(DADOS, 'arquivos', path.basename(nome));
   if (!fs.existsSync(f)) throw erro(404, 'Arquivo não encontrado');
   const tipo = { '.apk': 'application/vnd.android.package-archive', '.png': 'image/png', '.webp': 'image/webp', '.mp4': 'video/mp4' }[path.extname(f).toLowerCase()] || 'image/jpeg';
   res.writeHead(200, { 'content-type': tipo }); fs.createReadStream(f).pipe(res); return undefined;
 });
+
+function listarArquivos() {
+  const dir = path.join(DADOS, 'arquivos');
+  return fs.readdirSync(dir).filter((n) => ARQUIVO_RE.test(n)).map((n) => {
+    const st = fs.statSync(path.join(dir, n));
+    return { arquivo: n, nome: n.replace(/^[0-9a-f]{16}-/, ''), tamanho: st.size, em: st.mtime.toISOString() };
+  }).sort((a, b) => a.nome.localeCompare(b.nome));
+}
+
+// Presets: conjuntos de ajustes com nome, que viram uma tarefa em qualquer TV
+function salvarPreset(b, pid) {
+  const n = normalizarPreset(b);
+  const nomes = new Set(listarArquivos().map((a) => a.arquivo));
+  const faltam = [...n.apks, ...(n.papeis?.arquivos || [])].filter((a) => !nomes.has(a));
+  if (faltam.length) throw erro(400, 'Arquivo não encontrado no servidor: ' + faltam.join(', '));
+  let p = pid && db.presets.find((x) => x.id === pid);
+  if (pid && !p) throw erro(404, 'Preset não encontrado');
+  if (p) Object.assign(p, n, { atualizadoEm: agora() });
+  else { p = { id: id(), ...n, criadoEm: agora(), atualizadoEm: agora() }; db.presets.push(p); }
+  banco.gravar(); avisar('presets'); return p;
+}
+function aplicarPreset(tvId, pid, opcoes = {}, criadaPor = 'app') {
+  const p = db.presets.find((x) => x.id === pid || x.nome.toLowerCase() === String(pid).toLowerCase());
+  if (!p) throw erro(404, 'Preset não encontrado');
+  const acoes = acoesDoPreset(p, opcoes);
+  if (!acoes.length) throw erro(400, 'O preset não tem nada para aplicar');
+  return novaTarefa({ tvId, titulo: 'Preset: ' + p.nome, acoes, criadaPor });
+}
+rota('GET', '/api/presets', () => ({ presets: db.presets }));
+rota('POST', '/api/presets', async (req) => salvarPreset(await corpo(req)));
+rota('PATCH', '/api/presets/:id', async (req, s, { id: pid }) => salvarPreset(await corpo(req), pid));
+rota('DELETE', '/api/presets/:id', (req, s, { id: pid }) => {
+  db.presets = db.presets.filter((p) => p.id !== pid); banco.gravar(); avisar('presets'); return { ok: true };
+});
+rota('GET', '/api/tvs/:id/como-preset', (req, s, { id: tvId }) => {
+  if (!db.tvs[tvId]) throw erro(404, 'TV não encontrada');
+  return presetDaTv(db.tvs[tvId], listarArquivos().map((a) => a.arquivo));
+});
+rota('POST', '/api/tvs/:id/preset/:pid', async (req, s, { id: tvId, pid }) => aplicarPreset(tvId, pid, await corpo(req), s.aparelho));
 
 // Descobertas (sugestões de TVs e TV boxes vistas por cada aparelho)
 rota('POST', '/api/descobertas', async (req, s) => {
@@ -364,7 +407,7 @@ const servidor = http.createServer(async (req, res) => {
   res.setHeader('access-control-allow-methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   try {
-    if (url.pathname === '/mcp') return await tratarMcp(req, res, { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo, guardarArquivo, cadastrarTv });
+    if (url.pathname === '/mcp') return await tratarMcp(req, res, { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo, guardarArquivo, cadastrarTv, salvarPreset, aplicarPreset, listarArquivos, presetDaTv });
     if (url.pathname === '/launcher.apk' && fs.existsSync(APK_LAUNCHER)) { res.writeHead(200, { 'content-type': TIPOS['.apk'] }); return fs.createReadStream(APK_LAUNCHER).pipe(res); }
     if (!url.pathname.startsWith('/api/')) return estatico(req, res, url.pathname);
     for (const r of rotas) {

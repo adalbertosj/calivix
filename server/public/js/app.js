@@ -4,6 +4,7 @@ import { api, sessao, eventos } from './api.js';
 import * as motor from './motor.js';
 import { RECURSOS, NUCLEO_RE, NUCLEO_OK, nomeAmigavel, LAUNCHER, LAUNCHERS_DE_FABRICA, SETUP, LOJA, PACOTE_RE } from '../core/tv.js';
 import { carregarCatalogo, sugerirListas } from '../core/catalogo.js';
+import { acoesDoPreset, descreverPreset, presetDaTv } from '../core/presets.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -37,6 +38,7 @@ const I = {
   dir: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>',
   casa: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg>',
   enviar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12l16-8-6 16-2-7z"/></svg>',
+  pilha: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
   att: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>',
 };
 
@@ -212,7 +214,7 @@ function render() {
   const [tela = '', a1, a2] = rota();
   const pendentes = E.tarefas.filter((t) => t.status === 'pendente').length;
   const pedidos = E.pedidos.filter((p) => p.status === 'novo' || (p.resposta && !p.lido)).length;
-  const navs = [['', 'TVs', I.tv, pendentes], ['descobrir', 'Descobrir', I.radar], ['claude', 'Claude', I.mic, 0], ['ajustes', 'Ajustes', I.engr]];
+  const navs = [['', 'TVs', I.tv, pendentes], ['presets', 'Presets', I.pilha], ['descobrir', 'Descobrir', I.radar], ['claude', 'Claude', I.mic, 0], ['ajustes', 'Ajustes', I.engr]];
   const nav = (cls) => navs.map(([r, n, ic, num]) => `<button class="nav ${(tela === r || (r === '' && tela === 'tv')) ? 'ativo' : ''}" onclick="location.hash='#/${r}'">${ic}<span>${n}</span>${num ? `<span class="num">${num}</span>` : ''}</button>`).join('');
   if (!$('.app')) {
     raiz.innerHTML = `<div class="app"><aside class="lateral"><div class="marca"><img src="icons/icon-192.png" alt=""><b>Cali<span>vix</span></b></div><div id="nav1"></div><div class="rodape" id="rod"></div></aside><main class="conteudo" id="tela"></main></div><nav class="barra-inferior" id="nav2"></nav>`;
@@ -224,6 +226,8 @@ function render() {
   const mesma = alvo.dataset.rota === location.hash;
   alvo.dataset.rota = location.hash;
   if (tela === 'tv' && tvPorId(a1)) telaTv(alvo, tvPorId(a1), a2 || 'geral');
+  else if (tela === 'presets' && a1) telaPreset(alvo, a1, a2);
+  else if (tela === 'presets') telaPresets(alvo);
   else if (tela === 'descobrir') telaDescobrir(alvo);
   else if (tela === 'claude') telaClaude(alvo);
   else if (tela === 'ajustes') telaAjustes(alvo);
@@ -360,9 +364,14 @@ function abaGeral(c, tv) {
       <div class="lista" style="margin-top:10px">${[['Modelo', `${s.fabricante || '—'} ${s.modelo || ''}`], ['Plataforma', s.plataforma], ['Android', s.android && `${s.android} (SDK ${s.sdk})`], ['Firmware', s.firmware], ['Rede', tv.rede], ['Endereço', mostrarEndereco(tv) + (tv.tailnetIp ? ' · Tailnet ' + tv.tailnetIp : '')], ['Memória', s.ramMB && s.ramMB + ' MB'], ['Apps', inv && `${inv.pacotes.length} instalados · ${inv.desativados.length} desativados`], ['Tela inicial', inv?.home?.split('/')[0] && nomeAmigavel(inv.home.split('/')[0])]]
         .filter(([, v]) => v).map(([k, v]) => `<div class="item"><div class="txt"><div class="desc">${k}</div><div class="tit">${esc(v)}</div></div></div>`).join('')}</div>
       <div class="linha" style="margin-top:14px"><button class="bt" id="ler">${I.att} Ler a TV de novo</button><button class="bt" id="conf">Conferir após atualização</button></div></div></div>
+    <div class="cartao" style="margin-top:14px"><div class="linha"><div style="flex:1;min-width:220px"><h3 style="margin:0 0 4px">Presets</h3>
+      <div class="mini">Aplique de uma vez um conjunto de ajustes (apps, tela inicial, papéis de parede, limpeza) ou guarde o jeito desta TV para repetir em outras.</div></div>
+      <button class="bt" id="comoPreset">${I.pilha} Criar preset desta TV</button>${(E.presets || []).length ? `<button class="bt pri" id="usarPreset">Aplicar preset…</button>` : ''}</div></div>
     ${s.adbSeguro === '0' ? '<div class="faixa" style="margin-top:14px">Esta TV aceita ADB pela rede sem pedir permissão. Desligue a depuração quando não estiver usando.</div>' : ''}`;
   $('#cap').onclick = () => pedir(tv, 'Captura de tela', [{ tipo: 'captura' }], { silencioso: true });
   $('#ler').onclick = () => pedir(tv, 'Leitura da TV', [{ tipo: 'sondar' }, { tipo: 'inventario' }, { tipo: 'captura' }]);
+  $('#comoPreset').onclick = () => criarPresetDaTv(tv);
+  $('#usarPreset') && ($('#usarPreset').onclick = () => aplicarPresetJanela(null, tv));
   $('#conf').onclick = () => pedir(tv, 'Conferir o que o firmware religou', [{ tipo: 'conferir', params: { esperados: tv.perfil?.desativados || [] } }]);
 }
 
@@ -480,8 +489,8 @@ function abaLauncher(c, tv) {
       ${instalado ? '' : `<p class="mini" style="margin-top:14px">O Calivix guarda o estado atual antes, desativa a tela do Google TV só depois de o launcher abrir, e devolve a original se a TV não aceitar. ${inv.pacotes.includes(SETUP) && !inv.desativados.includes(SETUP) ? 'Dica: faça a <b>Limpeza</b> primeiro (ela desativa o assistente de configuração, que em Google TV disputa a tela inicial).' : ''}</p>`}
       ${instalado ? `<div class="cartao" style="margin-top:18px"><h3 style="margin:0 0 4px">Papel de parede</h3>
         <p class="mini" style="margin:0 0 12px">Fotos ou imagens atrás do dock e no protetor de tela do relógio. O Calivix ajusta cada uma para 1920×1080; deixe o assunto longe do relógio (alto à esquerda) e do dock (embaixo). Vídeo <b>.mp4</b> vira papel animado: toca em laço, sem som (1080p, até 40 MB). ${papeis.length ? `Na TV agora: ${papeis.map(esc).join(', ')}.` : ''}</p>
-        <div class="linha" style="flex-wrap:wrap;gap:10px"><label class="mini">Trocar <select class="ent" id="pMin" style="width:150px;display:inline-block">${[[1440, 'uma vez por dia'], [15, 'a cada 15 min'], [30, 'a cada 30 min'], [60, 'a cada hora'], [180, 'a cada 3 horas']].map(([v, n]) => `<option value="${v}" ${v === (cfg.wallpaper_rotation_minutes ?? 30) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-        <label class="mini">Ordem <select class="ent" id="pOrd" style="width:150px;display:inline-block"><option value="sequential">em sequência</option><option value="shuffle" ${cfg.wallpaper_order === 'shuffle' ? 'selected' : ''}>aleatória</option></select></label>
+        <div class="linha" style="flex-wrap:wrap;gap:10px"><label class="mini">Trocar <select class="ent" id="pMin" style="width:180px;display:inline-block">${[[1440, 'uma vez por dia'], [15, 'a cada 15 min'], [30, 'a cada 30 min'], [60, 'a cada hora'], [180, 'a cada 3 horas']].map(([v, n]) => `<option value="${v}" ${v === (cfg.wallpaper_rotation_minutes ?? 30) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label class="mini">Ordem <select class="ent" id="pOrd" style="width:180px;display:inline-block"><option value="sequential">em sequência</option><option value="shuffle" ${cfg.wallpaper_order === 'shuffle' ? 'selected' : ''}>aleatória</option></select></label>
         <label class="linha mini"><input type="checkbox" class="caixa" id="pSub"> Substituir os que já estão na TV</label>
         <span class="espaco"></span>${papeis.length ? '<button class="bt peq" id="pTirar">Tirar todos</button>' : ''}<label class="bt pri">Enviar imagens ou vídeos…<input type="file" accept="image/jpeg,image/png,image/webp,video/mp4" multiple id="pArq" hidden></label></div></div>` : ''}`;
     c.querySelectorAll('[data-esq]').forEach((b) => { b.onclick = () => { const i = +b.dataset.esq; if (i > 0) [dock[i - 1], dock[i]] = [dock[i], dock[i - 1]]; desenhar(); }; });
@@ -667,3 +676,217 @@ function telaAjustes(el) {
 }
 
 iniciar();
+
+// ---------- presets ----------
+// Um preset é um conjunto de ajustes com nome (apps, tela inicial, papéis de parede, limpeza, DNS) que vira
+// uma tarefa comum em qualquer TV. O editor guarda o rascunho fora da tela para não perder nada quando
+// chegam atualizações do servidor.
+let rascunho = null;          // { id ('novo' ou o do preset), p }
+let arquivosCache = null;
+const arquivoUrl = (a) => `${sessao.servidor}/api/arquivos/${encodeURIComponent(a)}?token=${encodeURIComponent(sessao.token)}`;
+const semPrefixo = (a) => String(a).replace(/^[0-9a-f]{16}-/, '');
+const nomeApp = (p) => LOJA.find((a) => a.pacote === p)?.nome || nomeAmigavel(p);
+async function carregarArquivos(forcar = false) {
+  if (!arquivosCache || forcar) arquivosCache = (await api('GET', '/api/arquivos')).arquivos;
+  return arquivosCache;
+}
+const presetVazio = () => ({ nome: '', descricao: '', apps: [], apks: [], desativar: [], launcher: null, papeis: null, dns: null });
+
+function telaPresets(el) {
+  const ps = E.presets || [];
+  el.innerHTML = `<div class="cabeca"><div><h1>Presets</h1><p class="sub">Conjuntos de ajustes prontos para repetir em outras TVs: apps para instalar de uma vez, a tela inicial limpa com o dock, papéis de parede, limpeza e DNS.</p></div>
+    <button class="bt pri" id="novo">${I.mais} Novo preset</button></div>
+    ${ps.length ? `<div class="grade">${ps.map((p) => `<div class="cartao"><div class="linha"><h3 style="margin:0;flex:1">${esc(p.nome)}</h3></div>
+      ${p.descricao ? `<p class="mini" style="margin:6px 0 0">${esc(p.descricao)}</p>` : ''}
+      <div class="linha" style="margin-top:10px;flex-wrap:wrap">${descreverPreset(p).split(' · ').map((d) => `<span class="selo info">${esc(d)}</span>`).join('')}</div>
+      <div class="mini" style="margin-top:8px">Atualizado ${quando(p.atualizadoEm)}</div>
+      <div class="linha" style="margin-top:14px"><button class="bt peq pri" data-aplicar="${p.id}">Aplicar numa TV</button><button class="bt peq" data-editar="${p.id}">Editar</button><button class="bt peq" data-dup="${p.id}">Duplicar</button><span class="espaco"></span><button class="bt peq perigo" data-apagar="${p.id}">Apagar</button></div></div>`).join('')}</div>`
+      : `<div class="cartao"><h3>Nenhum preset ainda</h3><p class="sub">Crie um do zero ou, numa TV que já está do seu jeito, use <b>Visão geral › Criar preset desta TV</b>.</p>
+        ${E.tvs.length ? `<div class="linha">${E.tvs.map((t) => `<button class="bt peq" data-datv="${t.id}">${I.pilha} A partir da ${esc(t.nome)}</button>`).join('')}</div>` : ''}</div>`}`;
+  $('#novo').onclick = () => { rascunho = { id: 'novo', p: presetVazio() }; location.hash = '#/presets/novo'; };
+  el.querySelectorAll('[data-datv]').forEach((b) => { b.onclick = () => criarPresetDaTv(tvPorId(b.dataset.datv)); });
+  el.querySelectorAll('[data-aplicar]').forEach((b) => { b.onclick = () => aplicarPresetJanela(ps.find((p) => p.id === b.dataset.aplicar)); });
+  el.querySelectorAll('[data-editar]').forEach((b) => { b.onclick = () => { rascunho = null; location.hash = '#/presets/' + b.dataset.editar; }; });
+  el.querySelectorAll('[data-dup]').forEach((b) => { b.onclick = () => {
+    const { id: _i, criadoEm: _c, atualizadoEm: _a, ...p } = structuredClone(ps.find((x) => x.id === b.dataset.dup));
+    rascunho = { id: 'novo', p: { ...p, nome: p.nome + ' (cópia)' } }; location.hash = '#/presets/novo';
+  }; });
+  el.querySelectorAll('[data-apagar]').forEach((b) => { b.onclick = async () => {
+    const p = ps.find((x) => x.id === b.dataset.apagar);
+    if (!await confirmar('Apagar o preset?', `“${esc(p.nome)}” deixa de existir. As TVs onde ele já foi aplicado não mudam.`, 'Apagar', true)) return;
+    await api('DELETE', '/api/presets/' + p.id); atualizar();
+  }; });
+}
+
+async function criarPresetDaTv(tv) {
+  if (!tv.inventario) return toast('Leia a TV primeiro (Visão geral › Ler a TV de novo)');
+  const arquivos = await carregarArquivos(true).catch(() => []);
+  rascunho = { id: 'novo', p: presetDaTv(tv, arquivos.map((a) => a.arquivo)) };
+  location.hash = '#/presets/novo';
+}
+
+function telaPreset(el, pid) {
+  if (el.dataset.editor === pid && $('#pNome', el)) return;   // já montado: não perde o que está sendo digitado
+  const existente = (E.presets || []).find((p) => p.id === pid);
+  if (pid !== 'novo' && !existente) { location.hash = '#/presets'; return; }
+  if (!rascunho || rascunho.id !== pid) rascunho = { id: pid, p: structuredClone(existente || presetVazio()) };
+  el.dataset.editor = pid;
+  const p = rascunho.p;
+  el.innerHTML = `<div class="linha" style="margin-bottom:6px"><a href="#/presets" class="bt peq">${I.volta} Presets</a></div>
+    <div class="cabeca"><div><h1>${pid === 'novo' ? 'Novo preset' : 'Editar preset'}</h1><p class="sub" style="margin:0">Marque só o que o preset deve mudar; o resto da TV fica como está.</p></div></div>
+    <div class="cartao"><div class="campo"><label>Nome</label><input class="ent" id="pNome" value="${esc(p.nome)}" placeholder="Ex.: Benilab, Quarto das crianças, TV box nova"></div>
+      <div class="campo" style="margin:0"><label>Descrição (opcional)</label><input class="ent" id="pDesc" value="${esc(p.descricao)}"></div></div>
+    <div id="pCorpo"></div>
+    <div class="linha" style="margin-top:18px"><span class="mini" id="pResumo"></span><span class="espaco"></span><a href="#/presets" class="bt">Cancelar</a><button class="bt pri" id="pSalvar">Salvar preset</button></div>`;
+  $('#pNome').oninput = (e) => { p.nome = e.target.value; };
+  $('#pDesc').oninput = (e) => { p.descricao = e.target.value; };
+  const corpo = $('#pCorpo');
+  const resumo = () => { $('#pResumo').textContent = 'Este preset: ' + descreverPreset(p); };
+  const desenhar = async () => {
+    const arquivos = await carregarArquivos().catch(() => []);
+    const imagens = arquivos.filter((a) => !/\.apk$/i.test(a.arquivo)), apks = arquivos.filter((a) => /\.apk$/i.test(a.arquivo));
+    const tipos = [...new Set(LOJA.map((a) => a.tipo))];
+    const outros = p.apps.filter((x) => !LOJA.some((a) => a.pacote === x));
+    const cfg = p.launcher?.config || {};
+    const dock = cfg.dock_apps || [];
+    const paraDock = [...new Set([...p.apps, 'com.google.android.youtube.tv', 'com.netflix.ninja', 'com.amazon.amazonvideo.livingroom', 'com.disney.disneyplus', 'com.globo.globotv', 'com.spotify.tv.android', 'com.android.vending'])].filter((x) => !dock.includes(x));
+    const pp = p.papeis;
+    corpo.innerHTML = `
+    <div class="cartao secao"><div class="linha"><h3>Apps para instalar</h3><span class="espaco"></span><span class="mini">${p.apps.length} escolhido(s)</span></div>
+      <p class="mini" style="margin:6px 0 4px">Pela Play Store de cada TV, com a conta Google dela. Um app que não estiver disponível numa TV é pulado com aviso.</p>
+      ${tipos.map((g) => `<div class="mini" style="margin:12px 0 6px"><b>${esc(g)}</b></div><div class="linha" style="flex-wrap:wrap;gap:8px">${LOJA.filter((a) => a.tipo === g).map((a) =>
+        `<button class="escolha ${p.apps.includes(a.pacote) ? 'sim' : ''}" data-app="${esc(a.pacote)}" title="${esc(a.pacote)}">${p.apps.includes(a.pacote) ? '✓ ' : '+ '}${esc(a.nome)}</button>`).join('')}</div>`).join('')}
+      ${outros.length ? `<div class="mini" style="margin:12px 0 6px"><b>Outros</b></div><div class="dock">${outros.map((x) => `<span class="chip">${esc(nomeAmigavel(x))} <span class="mini">${esc(x)}</span><button data-tiraapp="${esc(x)}" aria-label="tirar">✕</button></span>`).join('')}</div>` : ''}
+      <div class="linha" style="margin-top:12px"><input class="ent" id="pOutro" placeholder="Outro app: link da Play Store ou nome do pacote" style="flex:1;min-width:220px"><button class="bt" id="pAddOutro">Adicionar</button></div>
+      ${apks.length ? `<div class="mini" style="margin:14px 0 6px"><b>APKs guardados no servidor</b></div><div class="linha" style="flex-wrap:wrap;gap:8px">${apks.map((a) => `<button class="escolha ${p.apks.includes(a.arquivo) ? 'sim' : ''}" data-apk="${esc(a.arquivo)}">${p.apks.includes(a.arquivo) ? '✓ ' : '+ '}${esc(a.nome)}</button>`).join('')}</div>` : ''}
+      <div class="linha" style="margin-top:10px"><span class="espaco"></span><label class="bt peq">Enviar APK…<input type="file" accept=".apk" id="pApk" hidden></label></div></div>
+
+    <div class="cartao secao"><div class="linha"><h3>Tela inicial limpa</h3><span class="espaco"></span><label class="inter"><input type="checkbox" id="pLau" ${p.launcher ? 'checked' : ''}><span></span></label></div>
+      <p class="mini" style="margin:6px 0 0">Instala o launcher do CleanYourTV (ou atualiza o que já está) e aplica o dock. A tela de fábrica é desativada só depois de o launcher abrir.</p>
+      ${p.launcher ? `<div class="mini" style="margin:14px 0 6px"><b>Dock</b> (da esquerda para a direita; apps que a TV não tiver ficam de fora)</div>
+        <div class="dock">${dock.map((x, i) => `<span class="chip"><button data-desq="${i}" aria-label="mover para a esquerda">‹</button>${esc(nomeApp(x))}<button data-ddir="${i}" aria-label="mover para a direita">›</button><button data-dtira="${i}" aria-label="tirar">✕</button></span>`).join('') || '<span class="mini">vazio: o launcher mostra os apps instalados</span>'}</div>
+        <div class="linha" style="margin-top:12px"><select class="ent" id="pDockAdd" style="max-width:300px"><option value="">Adicionar ao dock…</option>${paraDock.map((x) => `<option value="${esc(x)}">${esc(nomeApp(x))}</option>`).join('')}</select>
+        <label class="mini">Colunas <select class="ent" id="pCol" style="width:90px;display:inline-block">${[4, 5, 6, 7].map((n) => `<option ${n === (cfg.columns || 4) ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>` : ''}</div>
+
+    <div class="cartao secao"><div class="linha"><h3>Papéis de parede</h3><span class="espaco"></span><span class="mini">${pp ? pp.arquivos.length + ' escolhido(s)' : 'nenhum'}</span></div>
+      <p class="mini" style="margin:6px 0 10px">Toque para escolher (a ordem do toque é a ordem na TV). Vídeos .mp4 viram papel animado. Precisa da tela inicial limpa na TV.</p>
+      <div class="papeis">${imagens.map((a) => { const i = pp ? pp.arquivos.indexOf(a.arquivo) : -1; const video = /\.mp4$/i.test(a.arquivo);
+        return `<div class="papel ${i >= 0 ? 'sim' : ''}" data-papel="${esc(a.arquivo)}" title="${esc(a.nome)}" style="${video ? '' : `background-image:url('${arquivoUrl(a.arquivo)}')`}">${video ? `<video src="${arquivoUrl(a.arquivo)}#t=8" muted preload="metadata" playsinline></video>` : ''}${i >= 0 ? `<b>${i + 1}</b>` : ''}<span>${video ? '▶ ' : ''}${esc(a.nome)}</span></div>`; }).join('')}</div>
+      <div class="linha" style="margin-top:12px;flex-wrap:wrap;gap:10px">${pp ? `<label class="mini">Trocar <select class="ent" id="pMin" style="width:180px;display:inline-block">${[[0, 'uma vez por dia'], [15, 'a cada 15 min'], [30, 'a cada 30 min'], [60, 'a cada hora'], [180, 'a cada 3 horas']].map(([v, n]) => `<option value="${v}" ${v === pp.minutos ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label class="mini">Ordem <select class="ent" id="pOrd" style="width:180px;display:inline-block"><option value="sequential">em sequência</option><option value="shuffle" ${pp.ordem === 'shuffle' ? 'selected' : ''}>aleatória</option></select></label>
+        <label class="linha mini"><input type="checkbox" class="caixa" id="pSub" ${pp.substituir ? 'checked' : ''}> Substituir os que já estão na TV</label>` : ''}
+        <span class="espaco"></span><label class="bt peq">Enviar imagens ou vídeos…<input type="file" accept="image/jpeg,image/png,image/webp,video/mp4" multiple id="pArqs" hidden></label></div></div>
+
+    <div class="cartao secao"><div class="linha"><h3>Desativar apps</h3><span class="espaco"></span><span class="mini">${p.desativar.length} pacote(s)</span></div>
+      <p class="mini" style="margin:6px 0 10px">Um pacote por linha. Em cada TV só os que existirem nela são desativados, sempre com as travas do CleanYourTV (núcleo do Android e o que a TV precisa ficam de fora).</p>
+      <textarea class="ent" id="pDes" placeholder="com.exemplo.anuncios">${esc(p.desativar.join('\n'))}</textarea></div>
+
+    <div class="cartao secao"><div class="linha"><h3>DNS privado</h3><span class="espaco"></span><label class="inter"><input type="checkbox" id="pDnsOn" ${p.dns != null ? 'checked' : ''}><span></span></label></div>
+      ${p.dns != null ? `<input class="ent" id="pDns" style="margin-top:10px" value="${esc(p.dns)}" placeholder="ex.: dns.adguard-dns.com (vazio = desligar o DNS privado)">` : '<p class="mini" style="margin:6px 0 0">Desligado: o preset não mexe no DNS.</p>'}</div>`;
+    resumo();
+    const de = (sel, fn) => corpo.querySelectorAll(sel).forEach((b) => { b.onclick = () => { fn(b); desenhar(); }; });
+    de('[data-app]', (b) => { const x = b.dataset.app; p.apps = p.apps.includes(x) ? p.apps.filter((y) => y !== x) : [...p.apps, x]; });
+    de('[data-tiraapp]', (b) => { p.apps = p.apps.filter((y) => y !== b.dataset.tiraapp); });
+    de('[data-apk]', (b) => { const x = b.dataset.apk; p.apks = p.apks.includes(x) ? p.apks.filter((y) => y !== x) : [...p.apks, x]; });
+    $('#pAddOutro').onclick = () => {
+      const v = $('#pOutro').value.trim(); const pac = (v.match(/[?&]id=([A-Za-z0-9_.]+)/) || [])[1] || v;
+      if (!PACOTE_RE.test(pac)) return toast('Cole o link da página do app na Play Store ou o nome do pacote');
+      if (!p.apps.includes(pac)) p.apps.push(pac); desenhar();
+    };
+    $('#pApk').onchange = async (e) => {
+      const f = e.target.files[0]; if (!f) return; toast('Enviando ' + f.name + '…');
+      const { arquivo } = await api('POST', '/api/arquivos', { nome: f.name, base64: await paraBase64(f) });
+      p.apks.push(arquivo); await carregarArquivos(true); desenhar();
+    };
+    $('#pLau').onchange = (e) => { p.launcher = e.target.checked ? { config: { dock_apps: p.apps.filter((x) => LOJA.find((a) => a.pacote === x && a.tipo !== 'Rede' && a.tipo !== 'Ferramentas')).slice(0, 5), columns: 4 } } : null; desenhar(); };
+    if (p.launcher) {
+      const d = p.launcher.config.dock_apps ||= [];
+      de('[data-desq]', (b) => { const i = +b.dataset.desq; if (i > 0) [d[i - 1], d[i]] = [d[i], d[i - 1]]; });
+      de('[data-ddir]', (b) => { const i = +b.dataset.ddir; if (i < d.length - 1) [d[i + 1], d[i]] = [d[i], d[i + 1]]; });
+      de('[data-dtira]', (b) => { d.splice(+b.dataset.dtira, 1); });
+      $('#pDockAdd').onchange = (e) => { if (e.target.value) { if (d.length >= 7) toast('O dock aceita até 7 apps'); else d.push(e.target.value); } desenhar(); };
+      $('#pCol').onchange = (e) => { p.launcher.config.columns = Number(e.target.value); };
+    }
+    de('[data-papel]', (b) => {
+      const x = b.dataset.papel;
+      if (!p.papeis) p.papeis = { arquivos: [], minutos: 30, ordem: 'sequential', substituir: true };
+      p.papeis.arquivos = p.papeis.arquivos.includes(x) ? p.papeis.arquivos.filter((y) => y !== x) : [...p.papeis.arquivos, x];
+      if (!p.papeis.arquivos.length) p.papeis = null;
+    });
+    if (pp) {
+      $('#pMin').onchange = (e) => { pp.minutos = Number(e.target.value); };
+      $('#pOrd').onchange = (e) => { pp.ordem = e.target.value; };
+      $('#pSub').onchange = (e) => { pp.substituir = e.target.checked; };
+    }
+    $('#pArqs').onchange = async (e) => {
+      const fs = [...e.target.files]; if (!fs.length) return;
+      toast(`Preparando ${fs.length} arquivo(s)…`);
+      try {
+        p.papeis ||= { arquivos: [], minutos: 30, ordem: 'sequential', substituir: true };
+        for (const f of fs) {
+          const video = /\.mp4$/i.test(f.name) || f.type === 'video/mp4';
+          if (video && f.size > 40 * 1024 * 1024) throw new Error(`${f.name} passa de 40 MB`);
+          const base64 = video ? await paraBase64(f) : await imagemParaTv(f);
+          const nome = f.name.replace(/\.[^.]*$/, '').normalize('NFD').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'imagem';
+          p.papeis.arquivos.push((await api('POST', '/api/arquivos', { nome: nome + (video ? '.mp4' : '.jpg'), base64 })).arquivo);
+        }
+        await carregarArquivos(true);
+      } catch (err) { toast('Não deu para enviar: ' + err.message); }
+      if (!p.papeis.arquivos.length) p.papeis = null;
+      desenhar();
+    };
+    $('#pDes').oninput = (e) => { p.desativar = e.target.value.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean); resumo(); };
+    $('#pDnsOn').onchange = (e) => { p.dns = e.target.checked ? '' : null; desenhar(); };
+    $('#pDns') && ($('#pDns').oninput = (e) => { p.dns = e.target.value.trim(); resumo(); });
+  };
+  desenhar();
+  $('#pSalvar').onclick = async () => {
+    if (!p.nome.trim()) return toast('Dê um nome ao preset');
+    const ruins = p.desativar.filter((x) => !PACOTE_RE.test(x));
+    if (ruins.length) return toast('Pacote inválido: ' + ruins.join(', '));
+    try {
+      const salvo = pid === 'novo' ? await api('POST', '/api/presets', p) : await api('PATCH', '/api/presets/' + pid, p);
+      rascunho = null; delete el.dataset.editor; toast('Preset “' + salvo.nome + '” salvo');
+      location.hash = '#/presets'; atualizar();
+    } catch (e) { toast(e.message); }
+  };
+}
+
+// Escolhe a TV (quando vem da lista de presets) ou o preset (quando vem da TV), e as partes a aplicar.
+function aplicarPresetJanela(preset, tv) {
+  const ps = E.presets || [];
+  let p = preset || ps[0], alvo = tv || E.tvs[0];
+  if (!p || !alvo) return toast(p ? 'Cadastre uma TV primeiro' : 'Crie um preset primeiro');
+  janela('<div id="ap"></div>', (j, fechar) => {
+    let pular = {}, apps = new Set(p.apps);
+    const desenhar = () => {
+      const tem = new Set(alvo.inventario?.pacotes || []);
+      const partes = [['apps', p.apps.length && `Instalar ${p.apps.length} app(s) pela Play Store`], ['apks', p.apks?.length && `Instalar ${p.apks.length} APK(s)`],
+        ['desativar', p.desativar.length && `Desativar ${p.desativar.length} pacote(s)`], ['launcher', p.launcher && 'Tela inicial limpa e dock'],
+        ['papeis', p.papeis && `${p.papeis.arquivos.length} papel(éis) de parede`], ['dns', p.dns != null && (p.dns ? 'DNS privado ' + p.dns : 'Desligar o DNS privado')]].filter(([, t]) => t);
+      $('#ap', j).innerHTML = `<h2>Aplicar preset</h2>
+        <div class="campo"><label>Preset</label><select class="ent" id="aP">${ps.map((x) => `<option value="${x.id}" ${x.id === p.id ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select></div>
+        <div class="campo"><label>TV</label><select class="ent" id="aT">${E.tvs.map((t) => `<option value="${t.id}" ${t.id === alvo.id ? 'selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></div>
+        <div class="lista">${partes.map(([k, t]) => `<label class="item"><input type="checkbox" class="caixa" data-parte="${k}" ${pular[k] ? '' : 'checked'}><div class="txt"><div class="tit">${esc(t)}</div></div></label>`).join('')}</div>
+        ${p.apps.length && !pular.apps ? `<div class="mini" style="margin:12px 0 6px">Apps (desmarque os que não quer nesta TV)</div><div class="linha" style="flex-wrap:wrap;gap:8px">${p.apps.map((x) =>
+          tem.has(x) ? `<span class="selo ok">${esc(nomeApp(x))} ✓</span>` : `<button class="escolha ${apps.has(x) ? 'sim' : ''}" data-aapp="${esc(x)}">${apps.has(x) ? '✓ ' : ''}${esc(nomeApp(x))}</button>`).join('')}</div>` : ''}
+        ${p.papeis && !pular.papeis && !p.launcher && !alvo.perfil?.launcher?.instalado ? '<p class="mini" style="margin-top:10px">⚠ Papéis de parede precisam da tela inicial limpa, que esta TV ainda não tem.</p>' : ''}
+        <p class="mini" style="margin-top:12px">Apps que não estiverem disponíveis nesta TV são pulados com aviso; o resto continua.</p>
+        <div class="linha" style="margin-top:14px"><span class="espaco"></span><button class="bt" id="aN">Cancelar</button><button class="bt pri" id="aS">Aplicar na ${esc(alvo.nome)}</button></div>`;
+      $('#aP', j).onchange = (e) => { p = ps.find((x) => x.id === e.target.value); pular = {}; apps = new Set(p.apps); desenhar(); };
+      $('#aT', j).onchange = (e) => { alvo = tvPorId(e.target.value); desenhar(); };
+      j.querySelectorAll('[data-parte]').forEach((c) => { c.onchange = () => { pular[c.dataset.parte] = !c.checked; desenhar(); }; });
+      j.querySelectorAll('[data-aapp]').forEach((b) => { b.onclick = () => { const x = b.dataset.aapp; apps.has(x) ? apps.delete(x) : apps.add(x); desenhar(); }; });
+      $('#aN', j).onclick = fechar;
+      $('#aS', j).onclick = async () => {
+        const op = { ...Object.fromEntries(Object.entries(pular).filter(([, v]) => v).map(([k]) => [k, false])) };
+        if (!pular.apps) op.apps = [...apps].filter((x) => !tem.has(x));
+        const acoes = acoesDoPreset(p, op);
+        if (!acoes.length) return toast('Nada para aplicar');
+        fechar();
+        try { await pedir(alvo, 'Preset: ' + p.nome, acoes); location.hash = '#/tv/' + alvo.id + '/tarefas'; } catch (e) { toast(e.message); }
+      };
+    };
+    desenhar();
+  });
+}

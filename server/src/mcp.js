@@ -6,6 +6,7 @@ import path from 'node:path';
 import { ACOES } from '../public/core/executor.js';
 import { LOJA } from '../public/core/tv.js';
 import { RECURSOS } from '../public/core/tv.js';
+import { descreverPreset } from '../public/core/presets.js';
 
 const FERRAMENTAS = [
   { name: 'calivix_listar_tvs', description: 'Lista as TVs cadastradas no Calivix com modelo, rede, endereço, situação do launcher e tarefas pendentes.', inputSchema: { type: 'object', properties: {} } },
@@ -18,12 +19,20 @@ const FERRAMENTAS = [
   { name: 'calivix_ver_tarefa', description: 'Situação, registro (log) e saídas de uma tarefa.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   { name: 'calivix_captura', description: 'Devolve a última captura de tela da TV (e pede uma nova ao servidor, se ele alcançar a TV).', inputSchema: { type: 'object', properties: { tvId: { type: 'string' }, nova: { type: 'boolean' } }, required: ['tvId'] } },
   { name: 'calivix_catalogo', description: 'Procura nas 407 listas testadas do CleanYourTV (por marca, modelo ou plataforma) e devolve os pacotes de uma lista.', inputSchema: { type: 'object', properties: { busca: { type: 'string' }, id: { type: 'string' } } } },
+  { name: 'calivix_listar_presets', description: 'Lista os presets (conjuntos de ajustes com nome: apps para instalar, launcher limpo, papéis de parede, pacotes para desativar, DNS) que podem ser aplicados em qualquer TV.', inputSchema: { type: 'object', properties: {} } },
+  { name: 'calivix_salvar_preset', description: 'Cria ou edita um preset. Ao editar, mande o preset inteiro (o que faltar é apagado). Para partir de uma TV já ajustada, use calivix_preset_da_tv e salve o resultado.', inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'para editar um preset existente (omita para criar)' }, nome: { type: 'string' }, descricao: { type: 'string' }, apps: { type: 'array', items: { type: 'string' }, description: 'pacotes para instalar pela Play Store da TV' }, apks: { type: 'array', items: { type: 'string' }, description: 'APKs já enviados ao servidor' }, desativar: { type: 'array', items: { type: 'string' } }, launcher: { type: 'object', description: '{ config } — dock, colunas, apps ocultos; null para não mexer no launcher' }, papeis: { type: 'object', description: '{ arquivos: [] (nomes no servidor, veja calivix_listar_arquivos), minutos: 30 (0 = fixo), ordem: sequential|shuffle, substituir: true }' }, dns: { type: 'string', description: 'DNS privado (vazio desliga; omita para não mexer)' } }, required: ['nome'] } },
+  { name: 'calivix_preset_da_tv', description: 'Monta (sem salvar) um preset com o que uma TV tem hoje: launcher e dock, papéis de parede, apps conhecidos instalados e pacotes desativados pelo Calivix.', inputSchema: { type: 'object', properties: { tvId: { type: 'string' } }, required: ['tvId'] } },
+  { name: 'calivix_apagar_preset', description: 'Apaga um preset (as TVs onde ele foi aplicado não mudam).', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+  { name: 'calivix_aplicar_preset', description: 'Aplica um preset numa TV (cria uma tarefa). Apps que falharem (pagos, indisponíveis) viram avisos sem parar o resto. Partes podem ser puladas.', inputSchema: { type: 'object', properties: { tvId: { type: 'string' }, preset: { type: 'string', description: 'id ou nome do preset' }, apps: { type: 'array', items: { type: 'string' }, description: 'só estes apps do preset (omita para todos)' }, pular: { type: 'array', items: { type: 'string', enum: ['apps', 'apks', 'desativar', 'launcher', 'papeis', 'dns'] } } }, required: ['tvId', 'preset'] } },
+  { name: 'calivix_listar_arquivos', description: 'Arquivos guardados no servidor (papéis de parede e APKs), com o nome a usar nas tarefas e presets.', inputSchema: { type: 'object', properties: {} } },
+  { name: 'calivix_listar_tarefas', description: 'Tarefas recentes (de uma TV ou de todas), com situação e resumo.', inputSchema: { type: 'object', properties: { tvId: { type: 'string' }, status: { type: 'string', enum: ['pendente', 'executando', 'concluida', 'falhou', 'cancelada'] }, limite: { type: 'integer' } } } },
+  { name: 'calivix_cancelar_tarefa', description: 'Cancela uma tarefa pendente (ou presa em executando num aparelho que sumiu).', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
 ];
 
 const texto = (o) => ({ content: [{ type: 'text', text: typeof o === 'string' ? o : JSON.stringify(o, null, 2) }] });
 
 export async function tratarMcp(req, res, ctx) {
-  const { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo, guardarArquivo, cadastrarTv } = ctx;
+  const { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo, guardarArquivo, cadastrarTv, salvarPreset, aplicarPreset, listarArquivos, presetDaTv } = ctx;
   const auth = req.headers.authorization || '';
   if (auth !== 'Bearer ' + db.ajustes.tokenClaude) {
     res.writeHead(401, { 'content-type': 'application/json' });
@@ -97,6 +106,27 @@ export async function tratarMcp(req, res, ctx) {
       case 'calivix_enviar_arquivo': {
         const arquivo = guardarArquivo(String(a.nome || ''), String(a.base64 || '').replace(/^data:[^,]*,/, ''));
         return texto({ arquivo, bytes: fs.statSync(path.join(DADOS, 'arquivos', arquivo)).size });
+      }
+      case 'calivix_listar_presets': return texto(db.presets.map((p) => ({ ...p, resumo: descreverPreset(p) })));
+      case 'calivix_salvar_preset': { const { id: pid, ...b } = a; const p = salvarPreset(b, pid); return texto({ ...p, resumo: descreverPreset(p) }); }
+      case 'calivix_preset_da_tv': { const t = db.tvs[a.tvId]; if (!t) throw new Error('TV não encontrada'); return texto(presetDaTv(t, listarArquivos().map((x) => x.arquivo))); }
+      case 'calivix_apagar_preset': { const n = db.presets.length; db.presets = db.presets.filter((p) => p.id !== a.id); if (n === db.presets.length) throw new Error('Preset não encontrado'); banco.gravar(); avisar('presets'); return texto('Preset apagado.'); }
+      case 'calivix_aplicar_preset': {
+        const op = Object.fromEntries((a.pular || []).map((k) => [k, false])); if (Array.isArray(a.apps)) op.apps = a.apps;
+        const t = aplicarPreset(a.tvId, a.preset, op, 'claude');
+        return texto({ tarefa: t.id, status: t.status, acoes: t.acoes.map((x) => x.tipo + (x.params?.pacote ? ' ' + x.params.pacote : '')) });
+      }
+      case 'calivix_listar_arquivos': return texto(listarArquivos());
+      case 'calivix_listar_tarefas': {
+        const l = db.tarefas.filter((t) => (!a.tvId || t.tvId === a.tvId) && (!a.status || t.status === a.status)).slice(-(a.limite || 20)).reverse();
+        return texto(l.map((t) => ({ id: t.id, tv: db.tvs[t.tvId]?.nome, titulo: t.titulo, status: t.status, assumidaPor: t.assumidaPor, criadaEm: t.criadaEm, fim: t.fim, resumo: t.resumo, erro: t.erro })));
+      }
+      case 'calivix_cancelar_tarefa': {
+        const t = db.tarefas.find((x) => x.id === a.id); if (!t) throw new Error('Tarefa não encontrada');
+        if (t.status === 'executando' && t.assumidaPor === 'servidor') throw new Error('O servidor está executando esta tarefa agora');
+        if (!['pendente', 'executando'].includes(t.status)) throw new Error('A tarefa já terminou (' + t.status + ')');
+        t.status = 'cancelada'; t.fim = new Date().toISOString(); t.log.push({ em: t.fim, l: '✗ cancelada pelo Claude' }); banco.gravar(); avisar('tarefas', { tvId: t.tvId });
+        return texto('Tarefa cancelada.');
       }
       case 'calivix_ver_tarefa': {
         const t = db.tarefas.find((x) => x.id === a.id); if (!t) throw new Error('Tarefa não encontrada');

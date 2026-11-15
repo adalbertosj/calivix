@@ -11,7 +11,7 @@ export const ACOES = {
   ativar: 'Reativar pacotes — { pacotes: [] }',
   restaurar: 'Desfazer tudo pelo registro do estado anterior',
   conferir: 'Ver o que uma atualização de firmware religou',
-  instalar_launcher: 'Instalar o launcher limpo e torná-lo a tela inicial — { config }',
+  instalar_launcher: 'Instalar o launcher limpo e torná-lo a tela inicial — { config, mesclar: false } (mesclar junta o config ao que já está na TV)',
   config_launcher: 'Mudar dock, colunas e apps ocultos do launcher — { config } (troca o config.json inteiro)',
   papel_de_parede: 'Papéis de parede do launcher — { arquivos: [] (imagens enviadas ao servidor antes), minutos: 30 (troca; 0 = fixo), ordem: "sequential" | "shuffle", substituir: false (apaga os que já estão), config: {} (outras chaves do tema) }; mantém dock e apps ocultos',
   captura: 'Tirar uma captura da tela da TV',
@@ -50,7 +50,8 @@ export async function executarTarefa(ctx, tvCad, tarefa) {
     for (const a of tarefa.acoes) {
       const p = a.params || {};
       log(`▶ ${ACOES[a.tipo]?.split(' — ')[0] || a.tipo}`);
-      switch (a.tipo) {
+      // ação opcional (ex.: um app de um preset): a falha vira aviso e a tarefa segue
+      try { switch (a.tipo) {
         case 'sondar': resultado.sondagem = await tv.sondar(adb); break;
         case 'inventario': resultado.inventario = await tv.inventario(adb); break;
         case 'desativar': {
@@ -72,7 +73,10 @@ export async function executarTarefa(ctx, tvCad, tarefa) {
           if (!ctx.registro || !(tv.LAUNCHERS_DE_FABRICA.some((l) => l in (ctx.registro.pacotes || {})))) {
             ctx.registro = await tv.registrarEstado(adb, [], ctx.registro); await ctx.salvarRegistro(ctx.registro);
           }
-          resultado.launcher = await tv.instalarLauncher(adb, apk, log, { config: p.config });
+          // mesclar: o config do preset entra por cima do que a TV já tem (papéis e outras chaves ficam)
+          const config = p.config && p.mesclar ? { ...(await tv.lerConfigLauncher(adb).catch(() => ({}))), ...p.config } : p.config;
+          resultado.launcher = await tv.instalarLauncher(adb, apk, log, { config });
+          if (config) resultado.launcherConfig = config;
           break;
         }
         case 'config_launcher': await tv.aplicarConfigLauncher(adb, p.config || {}, log); resultado.launcherConfig = p.config || {}; break;
@@ -104,6 +108,9 @@ export async function executarTarefa(ctx, tvCad, tarefa) {
         }
         case 'reiniciar': await adb.shell('sync; sleep 2; reboot').catch(() => {}); log('✓ TV reiniciando'); break;
         default: throw new Error('Ação desconhecida: ' + a.tipo);
+      } } catch (e) {
+        if (!a.opcional || /outra rede|não está alcançável|recusou a porta/.test(e.message)) throw e;
+        log('⚠ ' + e.message); (resultado.avisos ||= []).push(e.message);
       }
     }
     // Depois de mexer, sempre relata o estado novo (o servidor guarda no perfil da TV).

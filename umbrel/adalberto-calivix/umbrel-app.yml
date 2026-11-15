@@ -2,7 +2,7 @@ manifestVersion: 1
 id: adalberto-calivix
 category: automation
 name: Calivix
-version: "1.0.5"
+version: "1.0.6"
 tagline: Ajuste fino para suas TVs Android e Google TV
 description: >-
   Calivix guarda os perfis das suas TVs e aplica os ajustes pela rede.
@@ -27,9 +27,10 @@ description: >-
 
   Tudo fica no seu servidor.
 releaseNotes: >-
-  Papel de parede animado: em Tela inicial › Papel de parede, envie um vídeo .mp4 (laço sem som, 1080p,
-  até 40 MB) junto com as fotos; o Calivix atualiza o launcher da TV sozinho na primeira vez. A opção
-  "nunca (fixo)" virou "uma vez por dia" (o launcher deixava a tela preta).
+  Presets: conjuntos de ajustes com nome (apps para instalar pela Play Store, tela inicial limpa com o dock,
+  papéis de parede, pacotes para desativar e DNS) que se aplicam de uma vez em qualquer TV. Crie do zero na
+  nova aba Presets ou a partir de uma TV já ajustada (Visão geral › Criar preset desta TV). Um app que não
+  estiver disponível numa TV é pulado com aviso, sem parar o resto.
 developer: Adalberto
 website: https://github.com/adalbertosj/calivix
 submitter: Adalberto
