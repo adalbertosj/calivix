@@ -315,9 +315,9 @@ rota('POST', '/api/tarefas/:id/servidor', async (req, s, { id: tid }) => {
 });
 
 // Arquivos (APKs para instalar e imagens de papel de parede)
-const ARQUIVO_RE = /\.(apk|jpe?g|png|webp)$/i;
+const ARQUIVO_RE = /\.(apk|jpe?g|png|webp|mp4)$/i;
 function guardarArquivo(nome, base64) {
-  if (!ARQUIVO_RE.test(nome || '')) throw erro(400, 'Só arquivos .apk, .jpg, .png ou .webp');
+  if (!ARQUIVO_RE.test(nome || '')) throw erro(400, 'Só arquivos .apk, .jpg, .png, .webp ou .mp4');
   const n = id() + '-' + path.basename(nome).replace(/[^\w.-]/g, '_');
   fs.writeFileSync(path.join(DADOS, 'arquivos', n), Buffer.from(base64 || '', 'base64'));
   return n;
@@ -329,7 +329,7 @@ rota('POST', '/api/arquivos', async (req) => {
 rota('GET', '/api/arquivos/:nome', (req, s, { nome }, res) => {
   const f = path.join(DADOS, 'arquivos', path.basename(nome));
   if (!fs.existsSync(f)) throw erro(404, 'Arquivo não encontrado');
-  const tipo = { '.apk': 'application/vnd.android.package-archive', '.png': 'image/png', '.webp': 'image/webp' }[path.extname(f).toLowerCase()] || 'image/jpeg';
+  const tipo = { '.apk': 'application/vnd.android.package-archive', '.png': 'image/png', '.webp': 'image/webp', '.mp4': 'video/mp4' }[path.extname(f).toLowerCase()] || 'image/jpeg';
   res.writeHead(200, { 'content-type': tipo }); fs.createReadStream(f).pipe(res); return undefined;
 });
 

@@ -80,6 +80,11 @@ export async function executarTarefa(ctx, tvCad, tarefa) {
           // no servidor o arquivo leva um prefixo único ("<id>-nome.jpg"); na TV fica só o nome
           const imagens = [];
           for (const a of p.arquivos || []) imagens.push({ nome: String(a).replace(/^[0-9a-f]{16}-/, ''), dados: await ctx.arquivo(a) });
+          // papel animado: o launcher antigo ignora .mp4; atualiza antes (mesma assinatura, dock e tema ficam)
+          if (imagens.some((i) => /\.mp4$/i.test(i.nome))) {
+            const v = Number((await adb.shell(`dumpsys package ${tv.LAUNCHER} | grep -m1 -o 'versionCode=[0-9]*'`)).replace(/\D/g, '') || 0);
+            if (v && v < tv.LAUNCHER_COM_VIDEO) { log('Atualizando o launcher para tocar papel animado…'); await tv.atualizarLauncher(adb, await ctx.apkLauncher(), log); }
+          }
           const r = await tv.enviarPapeis(adb, imagens, log, p);
           resultado.launcherConfig = r.config; resultado.papeis = r.papeis;
           break;

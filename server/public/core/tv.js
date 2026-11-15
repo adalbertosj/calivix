@@ -328,9 +328,11 @@ export async function aplicarConfigLauncher(adb, config, log, { reiniciar = true
 // Papéis de parede do launcher: as imagens vão para a coleção do tema (wallpapers/) e o config.json que já
 // está na TV ganha a rotação, sem perder dock, colunas e apps ocultos. imagens: [{ nome, dados }].
 // O brilho colorido do app em foco fica desligado (ele tinge a imagem), salvo se config disser outra coisa.
-export const PAPEL_RE = /^[A-Za-z0-9_.-]+\.(jpe?g|png|webp)$/i;
+// .mp4 = papel animado (laço sem som; precisa do launcher 3.3-calivix.2 ou mais novo, versionCode 14)
+export const PAPEL_RE = /^[A-Za-z0-9_.-]+\.(jpe?g|png|webp|mp4)$/i;
+export const LAUNCHER_COM_VIDEO = 14;
 export async function enviarPapeis(adb, imagens, log, { minutos = 30, ordem = 'sequential', substituir = false, config = {} } = {}) {
-  for (const i of imagens) if (!PAPEL_RE.test(i.nome) || i.nome.startsWith('.')) throw new Error('Nome de imagem inválido: ' + i.nome + ' (use .jpg, .png ou .webp)');
+  for (const i of imagens) if (!PAPEL_RE.test(i.nome) || i.nome.startsWith('.')) throw new Error('Nome de imagem inválido: ' + i.nome + ' (use .jpg, .png, .webp ou .mp4)');
   if (substituir) {
     await adb.shell(`content delete --uri ${TEMA_URI}/wallpapers >/dev/null 2>&1; rm -f ${TEMA_DIR}/wallpapers/* 2>/dev/null`);
     log('✓ papéis de parede anteriores removidos');
@@ -338,10 +340,11 @@ export async function enviarPapeis(adb, imagens, log, { minutos = 30, ordem = 's
   for (const i of imagens) { await gravarNoTema(adb, 'wallpapers/' + i.nome, i.dados); log('✓ ' + i.nome); }
   const nomes = limpar(await adb.shell(`ls -1 ${TEMA_DIR}/wallpapers 2>/dev/null`)).split('\n').map((s) => s.trim()).filter((s) => PAPEL_RE.test(s));
   const novo = { ...(await lerConfigLauncher(adb)), ambient_glow: false, ...config,
-    wallpaper: true, wallpaper_rotation_minutes: Math.max(0, Math.min(1440, Math.round(Number(minutos) || 0))),
+    // o launcher só lê a coleção com rotação > 0: "fixo" (0) vira o maior intervalo que ele aceita, um dia
+    wallpaper: true, wallpaper_rotation_minutes: Math.max(1, Math.min(1440, Math.round(Number(minutos) || 1440))),
     wallpaper_order: ordem === 'shuffle' ? 'shuffle' : 'sequential' };
   await aplicarConfigLauncher(adb, novo, log);
-  log(nomes.length ? `✓ ${nomes.length} papel(éis) de parede na TV${novo.wallpaper_rotation_minutes ? `, trocando a cada ${novo.wallpaper_rotation_minutes} min` : ''}` : '✓ a TV ficou sem papéis de parede');
+  log(nomes.length ? `✓ ${nomes.length} papel(éis) de parede na TV${nomes.length > 1 ? (novo.wallpaper_rotation_minutes === 1440 ? ', trocando uma vez por dia' : `, trocando a cada ${novo.wallpaper_rotation_minutes} min`) : ''}` : '✓ a TV ficou sem papéis de parede');
   return { config: novo, papeis: nomes };
 }
 
@@ -364,6 +367,15 @@ export async function instalarApk(adb, dados, log) {
   const r = limpar(await adb.shell('pm install -r /data/local/tmp/calivix-app.apk; rm -f /data/local/tmp/calivix-app.apk', 300000)).trim();
   if (!/Success/.test(r)) throw new Error('A TV recusou o APK: ' + r.split('\n').pop());
   log('✓ aplicativo instalado');
+}
+
+// Atualiza o launcher limpo já instalado (mesma assinatura): dock, tema e papéis ficam; a tela inicial é reafirmada.
+export async function atualizarLauncher(adb, apk, log) {
+  await adb.enviarArquivo(apk, '/data/local/tmp/calivix-launcher.apk', 0o644);
+  const r = limpar(await adb.shell('pm install -r /data/local/tmp/calivix-launcher.apk; rm -f /data/local/tmp/calivix-launcher.apk', 180000)).trim();
+  if (!/Success/.test(r)) throw new Error('A TV recusou a atualização do launcher: ' + r.split('\n').pop());
+  await adb.shell(`cmd package set-home-activity --user 0 ${LAUNCHER}/.MainActivity`);
+  log('✓ launcher atualizado');
 }
 
 // Apps de TV mais pedidos, com o pacote da Play Store (a tela "Instalar app" e o Claude partem daqui).

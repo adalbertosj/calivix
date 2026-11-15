@@ -1,0 +1,356 @@
+diff --git a/launcher/app/build.gradle b/launcher/app/build.gradle
+index 6bec3ba8..aee929fb 100644
+--- a/launcher/app/build.gradle
++++ b/launcher/app/build.gradle
+@@ -13,8 +13,8 @@ android {
+         applicationId providers.gradleProperty('launcherApplicationId').getOrElse('com.gathin.tvhome')
+         minSdk 26
+         targetSdk 34
+-        versionCode 12
+-        versionName '3.3'
++        versionCode 14
++        versionName '3.3-calivix.2'
+     }
+ 
+     buildTypes {
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/ClockScene.java b/launcher/app/src/main/java/com/gathin/tvhome/ClockScene.java
+index dcae93ad..cf97a918 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/ClockScene.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/ClockScene.java
+@@ -175,6 +175,8 @@ final class ClockScene {
+ 
+     /** WallpaperPlayer's decode: sampled and scaled down to cover the screen, never bigger than 4K. */
+     private static Bitmap decode(File file, int screenW, int screenH) {
++        // an animated wallpaper: the screensaver keeps its first frame (no video behind the clock)
++        if (WallpaperVideo.isVideo(file)) return WallpaperVideo.poster(file, screenW, screenH);
+         try {
+             BitmapFactory.Options options = new BitmapFactory.Options();
+             options.inJustDecodeBounds = true;
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/ThemeFiles.java b/launcher/app/src/main/java/com/gathin/tvhome/ThemeFiles.java
+index 18fded94..42f933cf 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/ThemeFiles.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/ThemeFiles.java
+@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
+ final class ThemeFiles {
+     static final String WALLPAPERS = "wallpapers";
+     /** The names tools/theme.sh accepts for a collection image, and the types WallpaperRotation reads. */
+-    private static final Pattern IMAGE = Pattern.compile("[A-Za-z0-9_.-]+\\.(jpg|jpeg|png|webp)",
++    private static final Pattern IMAGE = Pattern.compile("[A-Za-z0-9_.-]+\\.(jpg|jpeg|png|webp|mp4)",
+             Pattern.CASE_INSENSITIVE);
+ 
+     private ThemeFiles() {}
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/WallpaperPlayer.java b/launcher/app/src/main/java/com/gathin/tvhome/WallpaperPlayer.java
+index 8da8dfa6..d1dd5ee1 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/WallpaperPlayer.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/WallpaperPlayer.java
+@@ -33,6 +33,9 @@ import java.util.concurrent.Executors;
+ final class WallpaperPlayer {
+     private final FrameLayout root;
+     private final ImageView image;
++    /** An .mp4 in the collection plays here, over its own first frame in image. */
++    private final WallpaperVideo video;
++    private File displayedFile;
+     private final int backgroundColor;
+     private final List<File> files;
+     private final long interval;
+@@ -94,7 +97,15 @@ final class WallpaperPlayer {
+         if (config.wallpaperEnabled && !files.isEmpty()) {
+             root.addView(image, 0, new FrameLayout.LayoutParams(
+                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
++            boolean anyVideo = false;
++            for (File f : files) anyVideo |= WallpaperVideo.isVideo(f);
++            // the video layer exists only when the collection has a video: picture-only themes are unchanged
++            video = anyVideo ? new WallpaperVideo(context) : null;
++            if (video != null) root.addView(video.view, 1, new FrameLayout.LayoutParams(
++                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+             showFirst();
++        } else {
++            video = null;
+         }
+     }
+ 
+@@ -115,6 +126,7 @@ final class WallpaperPlayer {
+                 // The picture covers the whole screen: the root's plain colour under it is overdraw.
+                 root.setBackground(null);
+                 displayed = first.getName();
++                showVideo(first);
+                 showCaption(false);
+                 if (!displayed.equals(previous)) {
+                     preferences.edit().putString("image", displayed)
+@@ -130,15 +142,30 @@ final class WallpaperPlayer {
+ 
+     void start() {
+         active = true;
++        if (video != null && WallpaperVideo.isVideo(displayedFile)) video.play(displayedFile);
+         update();
+     }
+ 
+     void stop() {
+         active = false;
++        if (video != null) video.pause();
++    }
++
++    /** Starts the video for an .mp4 (its first frame is already on screen), or stops it for a picture. */
++    private void showVideo(File file) {
++        displayedFile = file;
++        if (video == null) return;
++        if (WallpaperVideo.isVideo(file)) {
++            video.play(file);
++            if (!active) video.pause();
++        } else {
++            video.play(null);
++        }
+     }
+ 
+     /** Drops the wallpaper texture when Home is hidden and Android asks the process to free memory. */
+     void releaseForMemoryPressure() {
++        if (video != null) video.release();
+         if (current == null) return;
+         image.setImageDrawable(null);
+         // The renderer may still have a queued frame that references this hardware bitmap. Drop our references and
+@@ -162,6 +189,7 @@ final class WallpaperPlayer {
+     void close() {
+         active = false;
+         closed = true;
++        if (video != null) video.play(null);
+         decoder.shutdownNow();
+     }
+ 
+@@ -194,6 +222,7 @@ final class WallpaperPlayer {
+                 }
+                 show(bitmap);
+                 displayed = next.getName();
++                showVideo(next);
+                 showCaption(true);
+                 if (!displayed.equals(previous) || changed == 0) {
+                     preferences.edit().putString("image", displayed)
+@@ -270,6 +299,7 @@ final class WallpaperPlayer {
+     }
+ 
+     private Bitmap decode(File file) {
++        if (WallpaperVideo.isVideo(file)) return WallpaperVideo.poster(file, width, height);
+         try {
+             BitmapFactory.Options options = new BitmapFactory.Options();
+             options.inJustDecodeBounds = true;
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/WallpaperRotation.java b/launcher/app/src/main/java/com/gathin/tvhome/WallpaperRotation.java
+index c1044b36..14907bc0 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/WallpaperRotation.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/WallpaperRotation.java
+@@ -25,9 +25,10 @@ final class WallpaperRotation {
+         Arrays.sort(entries, Comparator.comparing(File::getName));
+         for (File entry : entries) {
+             String name = entry.getName().toLowerCase(Locale.ROOT);
+-            if (entry.isFile() && entry.length() > 0 && entry.length() <= 10 * 1024 * 1024
+-                    && (name.endsWith(".jpg") || name.endsWith(".jpeg")
+-                    || name.endsWith(".png") || name.endsWith(".webp"))) {
++            boolean picture = entry.length() <= 10 * 1024 * 1024 && (name.endsWith(".jpg") || name.endsWith(".jpeg")
++                    || name.endsWith(".png") || name.endsWith(".webp"));
++            boolean video = entry.length() <= WallpaperVideo.MAX_BYTES && name.endsWith(".mp4");
++            if (entry.isFile() && entry.length() > 0 && (picture || video)) {
+                 result.add(entry);
+                 if (result.size() == 100) break;
+             }
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/WallpaperVideo.java b/launcher/app/src/main/java/com/gathin/tvhome/WallpaperVideo.java
+new file mode 100644
+index 00000000..59b6c924
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/WallpaperVideo.java
+@@ -0,0 +1,198 @@
++package com.gathin.tvhome;
++
++import android.content.Context;
++import android.graphics.Bitmap;
++import android.graphics.Matrix;
++import android.graphics.SurfaceTexture;
++import android.media.MediaMetadataRetriever;
++import android.media.MediaPlayer;
++import android.util.Log;
++import android.view.Surface;
++import android.view.TextureView;
++import android.view.View;
++
++import java.io.File;
++import java.util.Locale;
++
++/**
++ * Animated wallpapers: an .mp4 in the collection plays muted and looped behind Home. The video's first frame is
++ * decoded as an ordinary picture (the poster) so Home and the clock screensaver draw it at once; the video then
++ * starts over it and pauses whenever Home is hidden. A file the TV cannot play keeps showing the poster.
++ */
++final class WallpaperVideo implements TextureView.SurfaceTextureListener {
++    /** Videos may be bigger than pictures: a 20 s 1080p loop is 5-15 MB. */
++    static final long MAX_BYTES = 40L * 1024 * 1024;
++
++    /** Where the poster comes from and playback starts: the middle of the loop, past any opening from black. */
++    static long posterMs(long durationMs) {
++        return durationMs > 0 ? Math.min(10_000L, durationMs / 2) : 0;
++    }
++
++    static boolean isVideo(File file) {
++        return file != null && file.getName().toLowerCase(Locale.ROOT).endsWith(".mp4");
++    }
++
++    /** The first frame, scaled to cover the screen (never bigger than it), or null if the file is not a video. */
++    static Bitmap poster(File file, int screenW, int screenH) {
++        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
++        try {
++            retriever.setDataSource(file.getPath());
++            String d = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
++            long at = posterMs(d == null ? 0 : Long.parseLong(d));
++            Bitmap frame = retriever.getFrameAtTime(at * 1000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
++            if (frame == null) return null;
++            int w = frame.getWidth(), h = frame.getHeight();
++            if (w <= screenW && h <= screenH) return frame;
++            float s = Math.max((float) screenW / w, (float) screenH / h);
++            Bitmap scaled = Bitmap.createScaledBitmap(frame, Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s)), true);
++            if (scaled != frame) frame.recycle();
++            return scaled;
++        } catch (Exception | OutOfMemoryError failure) {
++            return null;
++        } finally {
++            try {
++                retriever.release();
++            } catch (Exception ignored) {
++                // nothing to release
++            }
++        }
++    }
++
++    final TextureView view;
++    private Surface surface;
++    private MediaPlayer player;
++    private File file;
++    private boolean wanted;
++
++    WallpaperVideo(Context context) {
++        view = new TextureView(context);
++        view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
++        view.setFocusable(false);
++        // Not alpha 0: a fully transparent TextureView is never drawn, so its surface would never be created.
++        // Until the first frame it draws nothing, and the poster underneath shows through.
++        view.setVisibility(View.INVISIBLE);
++        view.setSurfaceTextureListener(this);
++    }
++
++    /** Plays this file (null stops and hides the video, leaving the picture underneath). */
++    void play(File next) {
++        if (next == null) {
++            file = null;
++            release();
++            view.setVisibility(View.INVISIBLE);
++            return;
++        }
++        view.setVisibility(View.VISIBLE);
++        if (next.equals(file) && player != null) {
++            resume();
++            return;
++        }
++        file = next;
++        release();
++        wanted = true;
++        if (surface != null) open();
++    }
++
++    void resume() {
++        wanted = true;
++        if (player != null) {
++            try {
++                if (!player.isPlaying()) player.start();
++            } catch (IllegalStateException failure) {
++                release();
++                if (surface != null && file != null) open();
++            }
++        } else if (surface != null && file != null) {
++            open();
++        }
++    }
++
++    void pause() {
++        wanted = false;
++        if (player == null) return;
++        try {
++            if (player.isPlaying()) player.pause();
++        } catch (IllegalStateException ignored) {
++            // released meanwhile
++        }
++    }
++
++    /** Frees the decoder; the poster stays. play() or resume() opens it again. */
++    void release() {
++        if (player != null) {
++            MediaPlayer old = player;
++            player = null;
++            try {
++                old.release();
++            } catch (Exception ignored) {
++                // already released
++            }
++        }
++    }
++
++    private void open() {
++        File target = file;
++        if (target == null || surface == null) return;
++        MediaPlayer mp = new MediaPlayer();
++        player = mp;
++        try {
++            mp.setDataSource(target.getPath());
++            mp.setSurface(surface);
++            mp.setLooping(true);
++            mp.setVolume(0f, 0f);
++            mp.setOnVideoSizeChangedListener((p, w, h) -> cover(w, h));
++            mp.setOnInfoListener((p, what, extra) -> {
++                return false;
++            });
++            mp.setOnErrorListener((p, what, extra) -> {
++                Log.w("TvHome.Wallpaper", "Video wallpaper failed (" + what + "/" + extra + "): " + target.getName());
++                if (p == player) release();
++                return true;
++            });
++            mp.setOnPreparedListener(p -> {
++                if (p != player) return;
++                cover(p.getVideoWidth(), p.getVideoHeight());
++                p.seekTo((int) posterMs(p.getDuration()));   // continues from the poster's frame
++                if (wanted) p.start();
++            });
++            mp.prepareAsync();
++        } catch (Exception failure) {
++            Log.w("TvHome.Wallpaper", "Cannot open video wallpaper: " + target.getName(), failure);
++            release();
++        }
++    }
++
++    /** centerCrop for the video, like the pictures. */
++    private void cover(int videoW, int videoH) {
++        int w = view.getWidth(), h = view.getHeight();
++        if (videoW <= 0 || videoH <= 0 || w <= 0 || h <= 0) return;
++        float s = Math.max((float) w / videoW, (float) h / videoH);
++        Matrix m = new Matrix();
++        m.setScale(videoW * s / w, videoH * s / h, w / 2f, h / 2f);
++        view.setTransform(m);
++    }
++
++    @Override
++    public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {
++        surface = new Surface(texture);
++        if (wanted && file != null && player == null) open();
++    }
++
++    @Override
++    public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) {
++        if (player != null) cover(player.getVideoWidth(), player.getVideoHeight());
++    }
++
++    @Override
++    public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
++        release();
++        if (surface != null) surface.release();
++        surface = null;
++        return true;
++    }
++
++    @Override
++    public void onSurfaceTextureUpdated(SurfaceTexture texture) {
++        // nothing to do per frame
++    }
++}

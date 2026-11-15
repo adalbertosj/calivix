@@ -452,6 +452,11 @@ async function imagemParaTv(arquivo) {
   return cv.toDataURL('image/jpeg', 0.9).split(',')[1];
 }
 
+// Vídeo (papel animado) vai como está: a TV decodifica o .mp4 no hardware.
+const paraBase64 = (arquivo) => new Promise((ok, falha) => {
+  const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = () => falha(r.error); r.readAsDataURL(arquivo);
+});
+
 function abaLauncher(c, tv) {
   if (precisaLer(c, tv)) return;
   const inv = tv.inventario;
@@ -474,11 +479,11 @@ function abaLauncher(c, tv) {
       ${instalado ? '<button class="bt pri" id="salvar">Salvar dock na TV</button>' : '<button class="bt grad" id="instalar">Instalar launcher limpo</button>'}</div>
       ${instalado ? '' : `<p class="mini" style="margin-top:14px">O Calivix guarda o estado atual antes, desativa a tela do Google TV só depois de o launcher abrir, e devolve a original se a TV não aceitar. ${inv.pacotes.includes(SETUP) && !inv.desativados.includes(SETUP) ? 'Dica: faça a <b>Limpeza</b> primeiro (ela desativa o assistente de configuração, que em Google TV disputa a tela inicial).' : ''}</p>`}
       ${instalado ? `<div class="cartao" style="margin-top:18px"><h3 style="margin:0 0 4px">Papel de parede</h3>
-        <p class="mini" style="margin:0 0 12px">Fotos ou imagens atrás do dock e no protetor de tela do relógio. O Calivix ajusta cada uma para 1920×1080; deixe o assunto longe do relógio (alto à esquerda) e do dock (embaixo). ${papeis.length ? `Na TV agora: ${papeis.map(esc).join(', ')}.` : ''}</p>
-        <div class="linha" style="flex-wrap:wrap;gap:10px"><label class="mini">Trocar <select class="ent" id="pMin" style="width:150px;display:inline-block">${[[0, 'nunca (fixo)'], [15, 'a cada 15 min'], [30, 'a cada 30 min'], [60, 'a cada hora'], [180, 'a cada 3 horas']].map(([v, n]) => `<option value="${v}" ${v === (cfg.wallpaper_rotation_minutes ?? 30) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <p class="mini" style="margin:0 0 12px">Fotos ou imagens atrás do dock e no protetor de tela do relógio. O Calivix ajusta cada uma para 1920×1080; deixe o assunto longe do relógio (alto à esquerda) e do dock (embaixo). Vídeo <b>.mp4</b> vira papel animado: toca em laço, sem som (1080p, até 40 MB). ${papeis.length ? `Na TV agora: ${papeis.map(esc).join(', ')}.` : ''}</p>
+        <div class="linha" style="flex-wrap:wrap;gap:10px"><label class="mini">Trocar <select class="ent" id="pMin" style="width:150px;display:inline-block">${[[1440, 'uma vez por dia'], [15, 'a cada 15 min'], [30, 'a cada 30 min'], [60, 'a cada hora'], [180, 'a cada 3 horas']].map(([v, n]) => `<option value="${v}" ${v === (cfg.wallpaper_rotation_minutes ?? 30) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <label class="mini">Ordem <select class="ent" id="pOrd" style="width:150px;display:inline-block"><option value="sequential">em sequência</option><option value="shuffle" ${cfg.wallpaper_order === 'shuffle' ? 'selected' : ''}>aleatória</option></select></label>
         <label class="linha mini"><input type="checkbox" class="caixa" id="pSub"> Substituir os que já estão na TV</label>
-        <span class="espaco"></span>${papeis.length ? '<button class="bt peq" id="pTirar">Tirar todos</button>' : ''}<label class="bt pri">Enviar imagens…<input type="file" accept="image/jpeg,image/png,image/webp" multiple id="pArq" hidden></label></div></div>` : ''}`;
+        <span class="espaco"></span>${papeis.length ? '<button class="bt peq" id="pTirar">Tirar todos</button>' : ''}<label class="bt pri">Enviar imagens ou vídeos…<input type="file" accept="image/jpeg,image/png,image/webp,video/mp4" multiple id="pArq" hidden></label></div></div>` : ''}`;
     c.querySelectorAll('[data-esq]').forEach((b) => { b.onclick = () => { const i = +b.dataset.esq; if (i > 0) [dock[i - 1], dock[i]] = [dock[i], dock[i - 1]]; desenhar(); }; });
     c.querySelectorAll('[data-dir]').forEach((b) => { b.onclick = () => { const i = +b.dataset.dir; if (i < dock.length - 1) [dock[i + 1], dock[i]] = [dock[i], dock[i + 1]]; desenhar(); }; });
     c.querySelectorAll('[data-tira]').forEach((b) => { b.onclick = () => { dock.splice(+b.dataset.tira, 1); desenhar(); }; });
@@ -497,13 +502,15 @@ function abaLauncher(c, tv) {
     });
     $('#pArq') && ($('#pArq').onchange = async (e) => {
       const fs = [...e.target.files]; if (!fs.length) return;
-      toast(`Preparando ${fs.length} imagem(ns)…`);
+      toast(`Preparando ${fs.length} arquivo(s)…`);
       try {
         const arquivos = [];
         for (const f of fs) {
-          const base64 = await imagemParaTv(f);
+          const video = /\.mp4$/i.test(f.name) || f.type === 'video/mp4';
+          if (video && f.size > 40 * 1024 * 1024) throw new Error(`${f.name} passa de 40 MB`);
+          const base64 = video ? await paraBase64(f) : await imagemParaTv(f);
           const nome = f.name.replace(/\.[^.]*$/, '').normalize('NFD').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'imagem';
-          arquivos.push((await api('POST', '/api/arquivos', { nome: nome + '.jpg', base64 })).arquivo);
+          arquivos.push((await api('POST', '/api/arquivos', { nome: nome + (video ? '.mp4' : '.jpg'), base64 })).arquivo);
         }
         enviarPapeis(arquivos, $('#pSub').checked);
       } catch (err) { toast('Não deu para enviar: ' + err.message); }

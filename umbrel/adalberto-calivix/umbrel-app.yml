@@ -2,7 +2,7 @@ manifestVersion: 1
 id: adalberto-calivix
 category: automation
 name: Calivix
-version: "1.0.4"
+version: "1.0.5"
 tagline: Ajuste fino para suas TVs Android e Google TV
 description: >-
   Calivix guarda os perfis das suas TVs e aplica os ajustes pela rede.
@@ -27,9 +27,9 @@ description: >-
 
   Tudo fica no seu servidor.
 releaseNotes: >-
-  TV boxes com ADB em outra porta: em Adicionar TV e nos Ajustes da TV, escreva o endereço com a porta
-  (ex.: 192.168.0.4:5188). O Claude também pode cadastrar TVs. Corrigido o nome da rede quando a TV
-  está no cabo.
+  Papel de parede animado: em Tela inicial › Papel de parede, envie um vídeo .mp4 (laço sem som, 1080p,
+  até 40 MB) junto com as fotos; o Calivix atualiza o launcher da TV sozinho na primeira vez. A opção
+  "nunca (fixo)" virou "uma vez por dia" (o launcher deixava a tela preta).
 developer: Adalberto
 website: https://github.com/adalbertosj/calivix
 submitter: Adalberto
