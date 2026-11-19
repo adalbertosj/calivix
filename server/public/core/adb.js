@@ -130,7 +130,8 @@ export class Adb {
   // transporte: { conectar(host, porta, ms) -> { escrever(Uint8Array), aoReceber(cb), aoFechar(cb), fechar() } }
   constructor(transporte, chave) { this.transporte = transporte; this.chave = chave; this.proximoId = 1; this.fluxos = new Map(); }
 
-  async conectar(host, porta = 5555, { tempo = 8000, esperarPermissao = 60000, aoPedirPermissao } = {}) {
+  // tls: função assíncrona que devolve { cert, key } em PEM (só no Node; ver server/src/adb-tls.js).
+  async conectar(host, porta = 5555, { tempo = 8000, esperarPermissao = 60000, aoPedirPermissao, tls } = {}) {
     this.host = host; this.porta = porta;
     this.sock = await this.transporte.conectar(host, porta, tempo);
     this.fila = new Fila();
@@ -146,7 +147,16 @@ export class Adb {
         this.maxdata = Math.min(m.arg1 || MAXDATA, MAXDATA);
         break;
       }
-      if (m.cmd === CMD.STLS) throw new Error('Esta TV só aceita depuração sem fio criptografada (Wireless debugging com pareamento). Ative a depuração pela rede na porta 5555.');
+      if (m.cmd === CMD.STLS) {
+        // Depuração por Wi-Fi (Android 11+): respondemos STLS e o resto da conversa vai dentro de TLS 1.3,
+        // com um certificado da nossa chave RSA (a TV só aceita chaves pareadas com código). Só o Node faz TLS.
+        if (!this.sock.iniciarTls || !tls) throw new Error('Este aparelho usa a depuração por Wi-Fi (com pareamento), que só o servidor do Calivix consegue usar. A tarefa fica para o servidor.');
+        this._enviar(CMD.STLS, m.arg0, 0);
+        try { await comTempo(this.sock.iniciarTls(await tls()), tempo, 'A TV não completou a conexão segura'); }
+        catch (e) { throw new Error('A TV recusou a conexão segura: a chave do Calivix ainda não foi pareada com ela (' + e.message + ')'); }
+        assinou = 'tls';
+        continue;
+      }
       if (m.cmd !== CMD.AUTH || m.arg0 !== AUTH_TOKEN) continue;
       if (!assinou) {
         this._enviar(CMD.AUTH, AUTH_ASSINATURA, 0, this.chave.assinar(m.dados));

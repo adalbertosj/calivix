@@ -348,6 +348,71 @@ export async function enviarPapeis(adb, imagens, log, { minutos = 30, ordem = 's
   return { config: novo, papeis: nomes };
 }
 
+// ---------- box de carro ----------
+// Na box de CarPlay / Android Auto (Android de tablet), a tela inicial de fábrica é quem se ajusta ao painel do
+// carro (ex.: SdLauncher3 lê persist.panel.width/height). Por isso o launcher do Calivix entra só como
+// "motor" do papel de parede do SISTEMA (SystemWallpaper, launcher 3.3-calivix.3): fica instalado sem virar a
+// tela inicial, e a de fábrica é reafirmada depois de instalar (senão o Android pode abrir o seletor).
+export const LAUNCHER_COM_SISTEMA = 15;
+const homeAtual = async (adb) => { const c = limpar(await adb.shell(Q_HOME)).trim().split('\n').pop().trim(); return /^[\w.]+\/[\w.$]+$/.test(c) ? c : ''; };
+async function garantirLauncherSemHome(adb, apk, log) {
+  const v = Number(limpar(await adb.shell(`dumpsys package ${LAUNCHER} | grep -m1 -o 'versionCode=[0-9]*'`)).replace(/\D/g, '') || 0);
+  if (v >= LAUNCHER_COM_SISTEMA) return;
+  const home = await homeAtual(adb);
+  log(v ? 'Atualizando o launcher do Calivix (papel de parede do sistema)…' : 'Instalando o launcher do Calivix só para o papel de parede (a tela inicial de fábrica fica)…');
+  await adb.enviarArquivo(apk, '/data/local/tmp/calivix-launcher.apk', 0o644);
+  const r = limpar(await adb.shell('pm install -r /data/local/tmp/calivix-launcher.apk; rm -f /data/local/tmp/calivix-launcher.apk', 180000)).trim();
+  if (!/Success/.test(r)) throw new Error('A TV recusou o launcher: ' + r.split('\n').pop());
+  if (home && !home.startsWith(LAUNCHER + '/')) await adb.shell(`cmd package set-home-activity --user 0 ${home}`);
+  const depois = await homeAtual(adb);
+  if (home && depois !== home) throw new Error(`A tela inicial mudou para ${depois || 'o seletor'} depois de instalar; era ${home}. Volte com a ação voltar_tela_inicial.`);
+  log('✓ launcher do Calivix instalado; a tela inicial continua ' + (home || 'a de fábrica'));
+}
+
+// Papéis da coleção no fundo do sistema (só imagens; vídeo precisa da tela inicial do Calivix).
+export async function papelSistema(adb, apk, imagens, log, { minutos = 30, ordem = 'sequential', substituir = false } = {}) {
+  const fotos = imagens.filter((i) => !/\.mp4$/i.test(i.nome));
+  if (fotos.length < imagens.length) log(`⚠ ${imagens.length - fotos.length} papel(éis) animado(s) ficaram de fora: o fundo do sistema só mostra imagens`);
+  for (const i of fotos) if (!PAPEL_RE.test(i.nome) || i.nome.startsWith('.')) throw new Error('Nome de imagem inválido: ' + i.nome);
+  await garantirLauncherSemHome(adb, apk, log);
+  if (substituir) await adb.shell(`content delete --uri ${TEMA_URI}/wallpapers >/dev/null 2>&1; rm -f ${TEMA_DIR}/wallpapers/* 2>/dev/null`);
+  for (const i of fotos) { await gravarNoTema(adb, 'wallpapers/' + i.nome, i.dados); log('✓ ' + i.nome); }
+  const min = Math.max(0, Math.min(1440, Math.round(Number(minutos) || 0)));
+  const r = limpar(await adb.shell(`am broadcast -n ${LAUNCHER}/.SystemWallpaper -a com.gathin.tvhome.SYSTEM_WALLPAPER --ei minutes ${min} --es order ${ordem === 'shuffle' ? 'shuffle' : 'sequential'}`));
+  const m = r.match(/data="([^"]*)"/);
+  if (!m) throw new Error('O launcher não respondeu ao pedido de papel de parede: ' + r.trim().split('\n').pop());
+  const qtd = Number((m[1].match(/pictures=(\d+)/) || [])[1] || 0);
+  if (!qtd) throw new Error('Nenhuma imagem chegou à coleção do launcher');
+  await new Promise((ok) => setTimeout(ok, 2500)); // o papel é posto numa thread do launcher
+  log(`✓ ${qtd} papel(éis) no fundo do sistema` + (qtd > 1 && min ? `, trocando a cada ${min} min e a cada partida` : ''));
+  const nomes = limpar(await adb.shell(`ls -1 ${TEMA_DIR}/wallpapers 2>/dev/null`)).split('\n').map((x) => x.trim()).filter((x) => PAPEL_RE.test(x));
+  return { papeis: nomes, sistema: { minutos: min, ordem } };
+}
+
+// Teste do launcher do Calivix como tela inicial SEM desativar a de fábrica: volta com voltarTelaInicial.
+export async function testarLauncher(adb, apk, log, { config } = {}) {
+  const anterior = await homeAtual(adb);
+  if (anterior.startsWith(LAUNCHER + '/')) { log('A tela inicial já é o launcher do Calivix.'); return { anterior: '' }; }
+  await garantirLauncherSemHome(adb, apk, log);
+  if (config) await aplicarConfigLauncher(adb, config, log, { reiniciar: false });
+  await adb.shell(`cmd package set-home-activity --user 0 ${LAUNCHER}/.MainActivity`);
+  const ini = limpar(await adb.shell(`am start -W -a android.intent.action.MAIN -c android.intent.category.HOME`));
+  const agora = await homeAtual(adb);
+  if (!agora.startsWith(LAUNCHER + '/') || !/Status: ok/.test(ini)) {
+    if (anterior) await adb.shell(`cmd package set-home-activity --user 0 ${anterior}`);
+    throw new Error('O launcher do Calivix não abriu como tela inicial; a de fábrica foi devolvida.');
+  }
+  log(`✓ teste: o launcher do Calivix é a tela inicial (a de fábrica, ${anterior}, continua instalada e ligada)`);
+  return { anterior };
+}
+export async function voltarTelaInicial(adb, home, log) {
+  if (!/^[\w.]+\/[\w.$]+$/.test(String(home || ''))) throw new Error('Informe a tela inicial para voltar (ex.: com.android.launcher3/.uioverrides.QuickstepLauncher)');
+  await adb.shell(`cmd package set-home-activity --user 0 ${home}; am start -a android.intent.action.MAIN -c android.intent.category.HOME`);
+  const agora = await homeAtual(adb);
+  if (agora !== home) throw new Error('A TV não voltou para ' + home + ' (responde: ' + (agora || 'seletor') + ')');
+  log('✓ tela inicial de volta: ' + home);
+}
+
 export async function captura(adb) { return adb.exec('screencap -p', 30000); }
 
 export const TECLAS = { HOME: 3, BACK: 4, UP: 19, DOWN: 20, LEFT: 21, RIGHT: 22, OK: 23, VOL_UP: 24, VOL_DOWN: 25, POWER: 26, MENU: 82, MUTE: 164, PLAY_PAUSE: 85, SETTINGS: 176 };

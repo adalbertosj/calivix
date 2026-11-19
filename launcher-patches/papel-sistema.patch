@@ -1,0 +1,205 @@
+diff --git a/launcher/app/build.gradle b/launcher/app/build.gradle
+index aee929fb..0636923b 100644
+--- a/launcher/app/build.gradle
++++ b/launcher/app/build.gradle
+@@ -13,8 +13,8 @@ android {
+         applicationId providers.gradleProperty('launcherApplicationId').getOrElse('com.gathin.tvhome')
+         minSdk 26
+         targetSdk 34
+-        versionCode 14
+-        versionName '3.3-calivix.2'
++        versionCode 15
++        versionName '3.3-calivix.3'
+     }
+ 
+     buildTypes {
+diff --git a/launcher/app/src/main/AndroidManifest.xml b/launcher/app/src/main/AndroidManifest.xml
+index ca18afa9..0828a91c 100644
+--- a/launcher/app/src/main/AndroidManifest.xml
++++ b/launcher/app/src/main/AndroidManifest.xml
+@@ -21,6 +21,9 @@
+     <!-- YaOS (Yandex TV OS): HDMI, AV and the tuner all play in com.yandex.tv.live, whose activities require
+          this permission (protection level normal, so it is granted at install). Ignored on other TVs. -->
+     <uses-permission android:name="yandex.tv.permission.ACCESS_TV_SOURCE" />
++    <!-- Calivix: SystemWallpaper puts the theme's collection on the system wallpaper (car boxes keep their Home). -->
++    <uses-permission android:name="android.permission.SET_WALLPAPER" />
++    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+ 
+     <!-- Android 11+ package visibility: lets the launcher list the TV apps it shows as tiles, and the
+          apps that declare a module card (docs/specs/card.md). -->
+@@ -240,6 +243,24 @@
+             </intent-filter>
+         </receiver>
+ 
++        <!-- Calivix: see SystemWallpaper. The command needs WRITE_SECURE_SETTINGS (adb shell); Tick only advances
++             the picture, on the alarm and at boot. -->
++        <receiver
++            android:name=".SystemWallpaper"
++            android:exported="true"
++            android:permission="android.permission.WRITE_SECURE_SETTINGS">
++            <intent-filter>
++                <action android:name="com.gathin.tvhome.SYSTEM_WALLPAPER" />
++            </intent-filter>
++        </receiver>
++        <receiver
++            android:name=".SystemWallpaper$Tick"
++            android:exported="true">
++            <intent-filter>
++                <action android:name="android.intent.action.BOOT_COMPLETED" />
++            </intent-filter>
++        </receiver>
++
+         <service
+             android:name=".InputKeyService"
+             android:exported="false"
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/SystemWallpaper.java b/launcher/app/src/main/java/com/gathin/tvhome/SystemWallpaper.java
+new file mode 100644
+index 00000000..54be63b6
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/SystemWallpaper.java
+@@ -0,0 +1,145 @@
++package com.gathin.tvhome;
++
++import android.app.AlarmManager;
++import android.app.PendingIntent;
++import android.app.WallpaperManager;
++import android.content.BroadcastReceiver;
++import android.content.Context;
++import android.content.Intent;
++import android.content.SharedPreferences;
++import android.graphics.Bitmap;
++import android.graphics.BitmapFactory;
++import android.graphics.Canvas;
++import android.graphics.Paint;
++import android.graphics.Rect;
++import android.hardware.display.DisplayManager;
++import android.util.DisplayMetrics;
++import android.util.Log;
++import android.view.Display;
++
++import java.io.File;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Locale;
++import java.util.Random;
++
++/**
++ * Calivix: the theme's wallpaper collection as the Android system wallpaper, for devices whose own Home must
++ * stay (a CarPlay / Android Auto box draws its Home to fit the car's screen). This launcher does not become
++ * Home there; it only keeps the system wallpaper rotating through Config.dir/wallpapers (pictures only),
++ * cropped to the real screen, on an alarm and at every boot.
++ *
++ * <pre>
++ * am broadcast -n com.gathin.tvhome/.SystemWallpaper -a com.gathin.tvhome.SYSTEM_WALLPAPER \
++ *     --ei minutes 30 --es order sequential      # turn on (and show the next picture now)
++ * am broadcast -n com.gathin.tvhome/.SystemWallpaper -a com.gathin.tvhome.SYSTEM_WALLPAPER --ez off true
++ * </pre>
++ * The command receiver requires WRITE_SECURE_SETTINGS (the adb shell has it); {@link Tick} gets the alarm and
++ * BOOT_COMPLETED.
++ */
++public class SystemWallpaper extends BroadcastReceiver {
++    static final String ACTION = "com.gathin.tvhome.SYSTEM_WALLPAPER";
++    static final String ACTION_TICK = "com.gathin.tvhome.SYSTEM_WALLPAPER_TICK";
++    private static final String PREFS = "system_wallpaper";
++    private static final String TAG = "SystemWallpaper";
++
++    @Override
++    public void onReceive(Context context, Intent intent) {
++        SharedPreferences p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
++        if (intent.getBooleanExtra("off", false)) {
++            p.edit().putBoolean("on", false).apply();
++            schedule(context, 0);
++            setResultData("off");
++            return;
++        }
++        int minutes = Math.max(0, Math.min(1440, intent.getIntExtra("minutes", p.getInt("minutes", 30))));
++        String order = intent.getStringExtra("order");
++        if (!WallpaperRotation.validOrder(order)) order = p.getString("order", WallpaperRotation.ORDER_SEQUENTIAL);
++        p.edit().putBoolean("on", true).putInt("minutes", minutes).putString("order", order).apply();
++        schedule(context, minutes);
++        setResultData("on minutes=" + minutes + " order=" + order + " pictures=" + pictures(context).size());
++        advanceAsync(context, goAsync());
++    }
++
++    /** Alarm and boot: the next picture, and the alarm again (alarms do not survive a reboot). */
++    public static class Tick extends BroadcastReceiver {
++        @Override
++        public void onReceive(Context context, Intent intent) {
++            SharedPreferences p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
++            if (!p.getBoolean("on", false)) return;
++            if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) schedule(context, p.getInt("minutes", 30));
++            advanceAsync(context, goAsync());
++        }
++    }
++
++    private static void advanceAsync(Context context, PendingResult pending) {
++        Context app = context.getApplicationContext();
++        new Thread(() -> {
++            try { advance(app); } catch (Throwable t) { Log.w(TAG, "wallpaper not set", t); }
++            finally { pending.finish(); }
++        }, TAG).start();
++    }
++
++    static List<File> pictures(Context context) {
++        List<File> out = new ArrayList<>();
++        File dir = Config.dir(context);
++        for (File f : WallpaperRotation.images(dir == null ? null : new File(dir, ThemeFiles.WALLPAPERS))) {
++            if (!f.getName().toLowerCase(Locale.ROOT).endsWith(".mp4")) out.add(f);
++        }
++        return out;
++    }
++
++    static void advance(Context context) throws Exception {
++        SharedPreferences p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
++        List<File> all = pictures(context);
++        File next = WallpaperRotation.pick(all, p.getString("last", null), p.getString("order", WallpaperRotation.ORDER_SEQUENTIAL), new Random());
++        if (next == null) return;
++        Bitmap fitted = fit(BitmapFactory.decodeFile(next.getAbsolutePath(), options(next, context)), screen(context));
++        if (fitted == null) return;
++        WallpaperManager.getInstance(context).setBitmap(fitted, null, true, WallpaperManager.FLAG_SYSTEM | WallpaperManager.FLAG_LOCK);
++        p.edit().putString("last", next.getName()).apply();
++    }
++
++    /** The real size of the default display (on a car box, the car's panel, e.g. 1896x700). */
++    private static int[] screen(Context context) {
++        Display d = context.getSystemService(DisplayManager.class).getDisplay(Display.DEFAULT_DISPLAY);
++        DisplayMetrics m = new DisplayMetrics();
++        d.getRealMetrics(m);
++        return new int[] { Math.max(m.widthPixels, 1), Math.max(m.heightPixels, 1) };
++    }
++
++    private static BitmapFactory.Options options(File f, Context context) {
++        BitmapFactory.Options o = new BitmapFactory.Options();
++        o.inJustDecodeBounds = true;
++        BitmapFactory.decodeFile(f.getAbsolutePath(), o);
++        int[] s = screen(context);
++        int sample = 1;
++        while (o.outWidth / (sample * 2) >= s[0] && o.outHeight / (sample * 2) >= s[1]) sample *= 2;
++        BitmapFactory.Options r = new BitmapFactory.Options();
++        r.inSampleSize = sample;
++        return r;
++    }
++
++    /** Scales to cover the screen and crops the middle, so the system draws it 1:1 (no zoom, no parallax). */
++    static Bitmap fit(Bitmap src, int[] screen) {
++        if (src == null) return null;
++        int w = screen[0], h = screen[1];
++        float scale = Math.max((float) w / src.getWidth(), (float) h / src.getHeight());
++        int cw = Math.round(w / scale), ch = Math.round(h / scale);
++        int x = (src.getWidth() - cw) / 2, y = (src.getHeight() - ch) / 2;
++        Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
++        new Canvas(out).drawBitmap(src, new Rect(x, y, x + cw, y + ch), new Rect(0, 0, w, h), new Paint(Paint.FILTER_BITMAP_FLAG));
++        src.recycle();
++        return out;
++    }
++
++    private static void schedule(Context context, int minutes) {
++        AlarmManager am = context.getSystemService(AlarmManager.class);
++        Intent tick = new Intent(ACTION_TICK).setClass(context, Tick.class);
++        PendingIntent pi = PendingIntent.getBroadcast(context, 0, tick, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
++        am.cancel(pi);
++        if (minutes <= 0) return;
++        long every = minutes * 60_000L;
++        am.setInexactRepeating(AlarmManager.RTC, System.currentTimeMillis() + every, every, pi);
++    }
++}

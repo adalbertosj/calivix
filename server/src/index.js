@@ -10,6 +10,7 @@ import { transporteNode, sondarPorta } from './transporte-node.js';
 import { gerarChave } from '../public/core/adb.js';
 import { executarTarefa, ACOES } from '../public/core/executor.js';
 import { tratarMcp } from './mcp.js';
+import { credenciais, parear, sondarAdb, acharPortaTls } from './adb-tls.js';
 import { normalizarPreset, acoesDoPreset, presetDaTv } from '../public/core/presets.js';
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
@@ -92,6 +93,7 @@ function resumir(r) {
   if (r.conferir) p.push(r.conferir.religados.length ? `${r.conferir.religados.length} religados pelo firmware` : 'nada religado');
   if (r.instalados) p.push(r.instalados.length + ' app(s) instalado(s)');
   if (r.papeis) p.push(r.papeis.length + ' papel(éis) de parede');
+  if (r.testeLauncher === true) p.push('launcher em teste'); else if (r.testeLauncher === false) p.push('tela inicial de fábrica de volta');
   if (r.avisos) p.push(r.avisos.length + ' aviso(s)');
   if (r.captura) p.push('captura de tela');
   return p.join(' · ') || 'concluída';
@@ -112,6 +114,9 @@ function aplicarRelato(tvId, r, quem) {
   if (r.launcher) { t.perfil.launcher = { ...(t.perfil.launcher || {}), instalado: true }; }
   if (r.launcherConfig) t.perfil.launcher = { ...(t.perfil.launcher || {}), config: r.launcherConfig };
   if (r.papeis) t.perfil.launcher = { ...(t.perfil.launcher || {}), papeis: r.papeis };
+  if (r.papelSistema) t.perfil.papelSistema = r.papelSistema;
+  if (r.homeDeFabrica) t.perfil.homeDeFabrica = r.homeDeFabrica;
+  if (r.testeLauncher !== undefined) t.perfil.testeLauncher = r.testeLauncher;
   if (r.desativar) t.perfil.desativados = [...new Set([...(t.perfil.desativados || []), ...r.desativar.desativados])];
   if (r.ativar) t.perfil.desativados = (t.perfil.desativados || []).filter((p) => !r.ativar.ativados.includes(p));
   if (r.restaurar) { t.perfil.desativados = []; t.perfil.launcher = { ...(t.perfil.launcher || {}), instalado: false }; }
@@ -119,26 +124,46 @@ function aplicarRelato(tvId, r, quem) {
   banco.gravar(); avisar('tvs', { tvId });
 }
 
+// Por onde o servidor alcança a TV agora: { ip, porta } ou null. TV com Tailscale (100.x) vem primeiro.
+// Na depuração por Wi-Fi (adbTls) a porta muda sempre que ela é religada: se a última não responde, o servidor
+// varre as portas (~1 min), no máximo a cada 10 min por TV, e guarda a nova.
+const varridas = new Map();
+async function alcancarTv(t, { varrer = true } = {}) {
+  const hosts = [t.tailnetIp, t.ip].filter(Boolean);
+  if (!t.adbTls) {
+    for (const ip of hosts) if (await sondarPorta(ip, t.porta || 5555, 1500)) return { ip, porta: t.porta || 5555 };
+    return null;
+  }
+  for (const ip of hosts) if (t.porta && await sondarAdb(ip, t.porta) === 'tls') return { ip, porta: t.porta };
+  if (!varrer || Date.now() - (varridas.get(t.id) || 0) < 10 * 60000) return null;
+  varridas.set(t.id, Date.now());
+  for (const ip of hosts) {
+    const porta = await acharPortaTls(ip, []);
+    if (porta) { t.porta = porta; banco.gravar(); avisar('tvs', { tvId: t.id }); return { ip, porta }; }
+  }
+  return null;
+}
+
 let ocupado = new Set();
 async function tentarNoServidor(tarefa) {
   if (tarefa.status !== 'pendente' || !['auto', 'servidor'].includes(tarefa.execucao)) return false;
   const t = db.tvs[tarefa.tvId];
   if (!t || ocupado.has(t.id)) return false;
-  // TV com Tailscale (endereço 100.x) vem primeiro; senão, o endereço da rede local dela.
+  ocupado.add(t.id);
   let alvo = null;
-  for (const ip of [t.tailnetIp, t.ip].filter(Boolean)) if (await sondarPorta(ip, t.porta || 5555, 1500)) { alvo = ip; break; }
-  if (!alvo || tarefa.status !== 'pendente') return false;
+  try { alvo = await alcancarTv(t); } finally { ocupado.delete(t.id); }
+  if (!alvo || tarefa.status !== 'pendente' || ocupado.has(t.id)) return false;
   ocupado.add(t.id);
   tarefa.status = 'executando'; tarefa.assumidaPor = 'servidor'; tarefa.inicio = agora();
   avisar('tarefas', { tvId: t.id });
   const log = (l) => { tarefa.log.push({ em: agora(), l }); avisar('log', { tarefa: tarefa.id, l }); };
   try {
     const r = await executarTarefa({
-      transporte: transporteNode, jwk: db.chaveAdb, aparelho: 'servidor', log, registro: t.registro || null,
+      transporte: transporteNode, jwk: db.chaveAdb, aparelho: 'servidor', log, registro: t.registro || null, tls: async () => credenciais(db.chaveAdb),
       salvarRegistro: async (reg) => { t.registro = reg; banco.gravar(); },
       apkLauncher: async () => new Uint8Array(fs.readFileSync(APK_LAUNCHER)),
       arquivo: async (nome) => new Uint8Array(fs.readFileSync(path.join(DADOS, 'arquivos', path.basename(nome)))),
-    }, { ...t, ip: alvo }, tarefa);
+    }, { ...t, ip: alvo.ip, porta: alvo.porta }, tarefa);
     aplicarRelato(t.id, r, 'servidor');
     tarefa.status = 'concluida'; tarefa.erro = null; tarefa.resumo = resumir(r);
     if (r.comandos) tarefa.saidas = r.comandos;
@@ -240,7 +265,39 @@ function portaValida(p, atual = 5555) {
   if (!Number.isInteger(n) || n < 1 || n > 65535) throw erro(400, 'Porta inválida: ' + p);
   return n;
 }
+const TIPOS_TV = ['tv', 'carro'];
 rota('POST', '/api/tvs', async (req) => cadastrarTv(await corpo(req)));
+
+// Pareamento da depuração por Wi-Fi (Android 11+): a TV mostra "Parear com código" com um código de 6 dígitos e
+// um endereço IP:porta (porta só do pareamento). O servidor pareia a chave do Calivix, acha a porta de conexão
+// e cadastra (ou atualiza) a TV com adbTls. b: { nome, local, ip, tailnetIp, tipo, portaPareamento, codigo, tvId? }
+async function parearTv(b) {
+  const atual = b.tvId ? db.tvs[b.tvId] : null;
+  if (b.tvId && !atual) throw erro(404, 'TV não encontrada');
+  const ip = String(b.ip || atual?.ip || '').trim(), tailnetIp = String(b.tailnetIp ?? atual?.tailnetIp ?? '').trim();
+  const hosts = [tailnetIp, ip].filter(Boolean);
+  if (!hosts.length) throw erro(400, 'Informe o IP da TV');
+  const portaPar = portaValida(b.portaPareamento, 0);
+  if (!portaPar) throw erro(400, 'Informe a porta de pareamento que aparece na TV');
+  let r = null, ultimo = null;
+  for (const host of hosts) {
+    try { r = await parear({ host, porta: portaPar, codigo: b.codigo, jwk: db.chaveAdb }); break; }
+    catch (e) { ultimo = e; if (/Código|6 dígitos/.test(e.message)) break; }
+  }
+  if (!r) throw erro(400, ultimo?.message || 'Não foi possível parear');
+  // a porta de conexão é outra; se veio do usuário, tenta primeiro
+  let porta = null;
+  for (const host of hosts) { porta = await acharPortaTls(host, [Number(b.porta) || 0, atual?.porta]); if (porta) break; }
+  let tv;
+  if (atual) {
+    Object.assign(atual, { ip: ip || atual.ip, tailnetIp, porta: porta || atual.porta, adbTls: true, tipo: TIPOS_TV.includes(b.tipo) ? b.tipo : atual.tipo || 'tv' });
+    banco.gravar(); avisar('tvs', { tvId: atual.id }); tv = atual;
+  } else tv = cadastrarTv({ nome: b.nome || 'TV box', local: b.local, ip: ip || tailnetIp, tailnetIp, tipo: b.tipo, porta: porta || 5555, adbTls: true });
+  const t = novaTarefa({ tvId: tv.id, titulo: 'Leitura inicial', acoes: [{ tipo: 'sondar' }, { tipo: 'inventario' }, { tipo: 'captura' }], criadaPor: b.criadaPor || 'app' });
+  return { tv, pareado: r, portaConexao: porta, tarefa: t };
+}
+rota('POST', '/api/tvs/parear', async (req, s) => parearTv({ ...(await corpo(req)), criadaPor: s.aparelho }));
+rota('POST', '/api/tvs/:id/parear', async (req, s, { id: tvId }) => parearTv({ ...(await corpo(req)), tvId, criadaPor: s.aparelho }));
 function cadastrarTv(b) {
   if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(String(b.ip || ''))) throw erro(400, 'IP inválido: ' + (b.ip || '(vazio)'));
   // mesma TV (pelo número de série) não é cadastrada duas vezes
@@ -248,7 +305,10 @@ function cadastrarTv(b) {
   const t = existente || { id: id(), criadaEm: agora(), perfil: { desativados: [], recursos: {}, launcher: { instalado: false, config: null } } };
   Object.assign(t, {
     nome: String(b.nome || t.nome || 'TV').slice(0, 60), local: String(b.local ?? t.local ?? '').slice(0, 60),
-    ip: b.ip || t.ip, porta: portaValida(b.porta, t.porta || 5555), serial: b.serial || t.serial || '', castId: b.castId || t.castId || '',
+    ip: b.ip || t.ip, porta: portaValida(b.porta, t.porta || 5555),
+    // tipo: 'tv' (padrão) ou 'carro' (box de CarPlay/Android Auto com Android de tablet: a tela inicial de
+    // fábrica é quem se adapta ao painel do carro, então o launcher limpo não entra e o papel vai para o sistema).
+    tipo: TIPOS_TV.includes(b.tipo) ? b.tipo : t.tipo || 'tv', adbTls: b.adbTls ?? t.adbTls ?? false, serial: b.serial || t.serial || '', castId: b.castId || t.castId || '',
     tailnetIp: b.tailnetIp ?? t.tailnetIp ?? '', sondagem: b.sondagem || t.sondagem || null, rede: b.rede || t.rede || b.sondagem?.rede || '',
     lista: b.lista ?? t.lista ?? null,
   });
@@ -259,7 +319,8 @@ rota('PATCH', '/api/tvs/:id', async (req, s, { id: tvId }) => {
   const t = db.tvs[tvId]; if (!t) throw erro(404, 'TV não encontrada');
   const b = await corpo(req);
   if (b.porta !== undefined) b.porta = portaValida(b.porta);
-  for (const k of ['nome', 'local', 'ip', 'porta', 'tailnetIp', 'lista']) if (b[k] !== undefined) t[k] = b[k];
+  if (b.tipo !== undefined && !TIPOS_TV.includes(b.tipo)) throw erro(400, 'Tipo inválido: ' + b.tipo);
+  for (const k of ['nome', 'local', 'ip', 'porta', 'tailnetIp', 'lista', 'tipo', 'adbTls']) if (b[k] !== undefined) t[k] = b[k];
   if (b.perfil) t.perfil = { ...t.perfil, ...b.perfil };
   banco.gravar(); avisar('tvs', { tvId }); return t;
 });
@@ -277,7 +338,7 @@ rota('GET', '/api/tvs/:id/captura', (req, s, { id: tvId }, res) => {
 });
 rota('POST', '/api/tvs/:id/alcance', async (req, s, { id: tvId }) => {
   const t = db.tvs[tvId]; if (!t) throw erro(404, 'TV não encontrada');
-  return { alcanca: await sondarPorta(t.ip, t.porta || 5555, 1500) };
+  return { alcanca: !!(await alcancarTv(t, { varrer: false })) };
 });
 
 // Tarefas
@@ -360,7 +421,7 @@ function salvarPreset(b, pid) {
 function aplicarPreset(tvId, pid, opcoes = {}, criadaPor = 'app') {
   const p = db.presets.find((x) => x.id === pid || x.nome.toLowerCase() === String(pid).toLowerCase());
   if (!p) throw erro(404, 'Preset não encontrado');
-  const acoes = acoesDoPreset(p, opcoes);
+  const acoes = acoesDoPreset(p, opcoes, db.tvs[tvId]);
   if (!acoes.length) throw erro(400, 'O preset não tem nada para aplicar');
   return novaTarefa({ tvId, titulo: 'Preset: ' + p.nome, acoes, criadaPor });
 }
@@ -407,7 +468,7 @@ const servidor = http.createServer(async (req, res) => {
   res.setHeader('access-control-allow-methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   try {
-    if (url.pathname === '/mcp') return await tratarMcp(req, res, { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo, guardarArquivo, cadastrarTv, salvarPreset, aplicarPreset, listarArquivos, presetDaTv });
+    if (url.pathname === '/mcp') return await tratarMcp(req, res, { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo, guardarArquivo, cadastrarTv, salvarPreset, aplicarPreset, listarArquivos, presetDaTv, parearTv });
     if (url.pathname === '/launcher.apk' && fs.existsSync(APK_LAUNCHER)) { res.writeHead(200, { 'content-type': TIPOS['.apk'] }); return fs.createReadStream(APK_LAUNCHER).pipe(res); }
     if (!url.pathname.startsWith('/api/')) return estatico(req, res, url.pathname);
     for (const r of rotas) {

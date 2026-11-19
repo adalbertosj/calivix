@@ -55,6 +55,7 @@ export async function descobrir(aoProgredir) {
 // da Tailnet (fora de casa). null se nenhum responde. O número de série é conferido ao conectar.
 export async function enderecoAoAlcance(tv) {
   const n = nativo(); if (!n) return null;
+  if (tv.adbTls) return null; // depuração por Wi-Fi (TLS): só o servidor fala com ela
   const hosts = [tv.ip, tv.tailnetIp].filter(Boolean);
   if (!hosts.length) return null;
   const r = await n.sondar(hosts, [tv.porta || 5555], 1500).catch(() => []);
@@ -95,7 +96,7 @@ export async function executarAqui(tarefa, tv, aoLog) {
     return await api('POST', `/api/tarefas/${tarefa.id}/concluir`, { resultado: r });
   } catch (e) {
     clearInterval(timer); buffer.push('✗ ' + e.message); await enviarLog();
-    const devolver = /outra rede|não está alcançável|recusou a porta|Sem resposta/.test(e.message);
+    const devolver = /outra rede|não está alcançável|recusou a porta|Sem resposta|só o servidor/.test(e.message);
     await api('POST', `/api/tarefas/${tarefa.id}/concluir`, { erro: e.message, devolver }).catch(() => {});
     throw e;
   } finally { correndo.delete(tv.id); }

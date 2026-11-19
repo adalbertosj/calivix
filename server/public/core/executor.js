@@ -14,6 +14,9 @@ export const ACOES = {
   instalar_launcher: 'Instalar o launcher limpo e torná-lo a tela inicial — { config, mesclar: false } (mesclar junta o config ao que já está na TV)',
   config_launcher: 'Mudar dock, colunas e apps ocultos do launcher — { config } (troca o config.json inteiro)',
   papel_de_parede: 'Papéis de parede do launcher — { arquivos: [] (imagens enviadas ao servidor antes), minutos: 30 (troca; 0 = fixo), ordem: "sequential" | "shuffle", substituir: false (apaga os que já estão), config: {} (outras chaves do tema) }; mantém dock e apps ocultos',
+  papel_sistema: 'Papéis no fundo do sistema, mantendo a tela inicial de fábrica (box de carro) — { arquivos: [] (imagens; .mp4 fica de fora), minutos: 30 (troca, e também a cada partida; 0 = fixo), ordem, substituir }',
+  testar_launcher: 'Testar o launcher limpo como tela inicial sem desativar a de fábrica — { config } (volta com voltar_tela_inicial)',
+  voltar_tela_inicial: 'Devolver a tela inicial de fábrica depois de um teste — { home } (opcional: a guardada no teste)',
   captura: 'Tirar uma captura da tela da TV',
   tecla: 'Apertar uma tecla do controle — { tecla: "HOME" | "OK" | … }',
   abrir_app: 'Abrir um aplicativo — { pacote }',
@@ -24,11 +27,11 @@ export const ACOES = {
   reiniciar: 'Reiniciar a TV',
 };
 
-// ctx: { transporte, jwk, log(l), registro (estado anterior ou null), salvarRegistro(r), apkLauncher(), arquivo(nome),
+// ctx: { transporte, jwk, tls() (só no Node: certificado para a depuração por Wi-Fi), log(l), registro (estado anterior ou null), salvarRegistro(r), apkLauncher(), arquivo(nome),
 //        relatar({ sondagem, inventario, captura }) }
 export async function conectarTv(ctx, alvo, { aoPedirPermissao } = {}) {
   const adb = new Adb(ctx.transporte, new ChaveAdb(ctx.jwk, 'calivix@' + (ctx.aparelho || 'app')));
-  await adb.conectar(alvo.ip, alvo.porta || 5555, { aoPedirPermissao, esperarPermissao: 120000 });
+  await adb.conectar(alvo.ip, alvo.porta || 5555, { aoPedirPermissao, esperarPermissao: 120000, tls: ctx.tls });
   return adb;
 }
 
@@ -69,6 +72,8 @@ export async function executarTarefa(ctx, tvCad, tarefa) {
           break;
         }
         case 'instalar_launcher': {
+          // na box de carro a tela inicial de fábrica se ajusta ao painel: nunca desativá-la
+          if (tvCad.tipo === 'carro') throw new Error('Box de carro: a tela inicial de fábrica não é trocada nem desativada. Use testar_launcher (reversível) ou papel_sistema.');
           const apk = await ctx.apkLauncher();
           if (!ctx.registro || !(tv.LAUNCHERS_DE_FABRICA.some((l) => l in (ctx.registro.pacotes || {})))) {
             ctx.registro = await tv.registrarEstado(adb, [], ctx.registro); await ctx.salvarRegistro(ctx.registro);
@@ -93,6 +98,25 @@ export async function executarTarefa(ctx, tvCad, tarefa) {
           resultado.launcherConfig = r.config; resultado.papeis = r.papeis;
           break;
         }
+        case 'papel_sistema': {
+          const imagens = [];
+          for (const a of p.arquivos || []) imagens.push({ nome: String(a).replace(/^[0-9a-f]{16}-/, ''), dados: await ctx.arquivo(a) });
+          const r = await tv.papelSistema(adb, await ctx.apkLauncher(), imagens, log, p);
+          resultado.papeis = r.papeis; resultado.papelSistema = r.sistema;
+          break;
+        }
+        case 'testar_launcher': {
+          const r = await tv.testarLauncher(adb, await ctx.apkLauncher(), log, { config: p.config });
+          if (r.anterior) resultado.homeDeFabrica = r.anterior;
+          resultado.testeLauncher = true;
+          break;
+        }
+        case 'voltar_tela_inicial': {
+          const home = p.home || tvCad.perfil?.homeDeFabrica;
+          await tv.voltarTelaInicial(adb, home, log);
+          resultado.testeLauncher = false;
+          break;
+        }
         case 'captura': resultado.captura = await tv.captura(adb); log('✓ captura feita'); break;
         case 'tecla': await tv.tecla(adb, p.tecla); log('✓ tecla ' + p.tecla); break;
         case 'abrir_app': await tv.abrirApp(adb, p.pacote); log('✓ abriu ' + p.pacote); break;
@@ -109,7 +133,7 @@ export async function executarTarefa(ctx, tvCad, tarefa) {
         case 'reiniciar': await adb.shell('sync; sleep 2; reboot').catch(() => {}); log('✓ TV reiniciando'); break;
         default: throw new Error('Ação desconhecida: ' + a.tipo);
       } } catch (e) {
-        if (!a.opcional || /outra rede|não está alcançável|recusou a porta/.test(e.message)) throw e;
+        if (!a.opcional || /outra rede|não está alcançável|recusou a porta|só o servidor/.test(e.message)) throw e;
         log('⚠ ' + e.message); (resultado.avisos ||= []).push(e.message);
       }
     }

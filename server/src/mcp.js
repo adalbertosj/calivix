@@ -10,7 +10,8 @@ import { descreverPreset } from '../public/core/presets.js';
 
 const FERRAMENTAS = [
   { name: 'calivix_listar_tvs', description: 'Lista as TVs cadastradas no Calivix com modelo, rede, endereço, situação do launcher e tarefas pendentes.', inputSchema: { type: 'object', properties: {} } },
-  { name: 'calivix_adicionar_tv', description: 'Cadastra uma TV ou TV box (com a depuração ADB já ligada) e faz a leitura inicial (modelo, apps e captura) se o servidor a alcançar; senão a leitura fica pendente para um aparelho na rede dela. Na primeira conexão a TV pede "Permitir depuração?" na tela. Se já houver uma TV com o mesmo número de série, atualiza o cadastro dela.', inputSchema: { type: 'object', properties: { nome: { type: 'string' }, local: { type: 'string' }, ip: { type: 'string', description: 'IP na rede de casa, ex.: 192.168.0.43' }, porta: { type: 'integer', description: 'porta do ADB (padrão 5555; algumas TV boxes usam outra, ex.: 5188)' }, tailnetIp: { type: 'string', description: 'opcional, IP 100.x se a TV tiver Tailscale' } }, required: ['nome', 'ip'] } },
+  { name: 'calivix_adicionar_tv', description: 'Cadastra uma TV ou TV box (com a depuração ADB já ligada) e faz a leitura inicial (modelo, apps e captura) se o servidor a alcançar; senão a leitura fica pendente para um aparelho na rede dela. Na primeira conexão a TV pede "Permitir depuração?" na tela. Se já houver uma TV com o mesmo número de série, atualiza o cadastro dela.', inputSchema: { type: 'object', properties: { nome: { type: 'string' }, local: { type: 'string' }, ip: { type: 'string', description: 'IP na rede de casa, ex.: 192.168.0.43' }, porta: { type: 'integer', description: 'porta do ADB (padrão 5555; algumas TV boxes usam outra, ex.: 5188)' }, tailnetIp: { type: 'string', description: 'opcional, IP 100.x se a TV tiver Tailscale' }, tipo: { type: 'string', enum: ['tv', 'carro'], description: 'carro: box de CarPlay/Android Auto (a tela inicial de fábrica fica; papéis vão para o fundo do sistema)' } }, required: ['nome', 'ip'] } },
+  { name: 'calivix_parear_tv', description: 'Para TVs e boxes que só têm a "Depuração por Wi-Fi" (Android 11+, porta aleatória e código de 6 dígitos): o servidor pareia a chave do Calivix, acha a porta de conexão e cadastra (ou atualiza, com tvId) a TV, já pedindo a leitura inicial. Na TV: Opções do desenvolvedor › Depuração por Wi-Fi › Parear o dispositivo com um código de pareamento (porta e código dessa janela, que precisa ficar aberta). A Depuração por Wi-Fi só liga com a TV num Wi-Fi.', inputSchema: { type: 'object', properties: { tvId: { type: 'string', description: 'para parear de novo uma TV já cadastrada' }, nome: { type: 'string' }, local: { type: 'string' }, ip: { type: 'string' }, tailnetIp: { type: 'string' }, tipo: { type: 'string', enum: ['tv', 'carro'] }, portaPareamento: { type: 'integer' }, codigo: { type: 'string' } }, required: ['portaPareamento', 'codigo'] } },
   { name: 'calivix_detalhes_tv', description: 'Detalhes de uma TV: sondagem (modelo, Android, firmware), apps instalados e desativados, perfil e recursos.', inputSchema: { type: 'object', properties: { tvId: { type: 'string' } }, required: ['tvId'] } },
   { name: 'calivix_listar_pedidos', description: 'Pedidos feitos por voz/texto na área "Claude" do app Calivix. Por padrão só os novos.', inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['novo', 'em_andamento', 'feito', 'recusado', 'todos'] } } } },
   { name: 'calivix_atualizar_pedido', description: 'Muda a situação de um pedido e grava a resposta que o usuário verá no app.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, status: { type: 'string', enum: ['em_andamento', 'feito', 'recusado'] }, resposta: { type: 'string' } }, required: ['id', 'status'] } },
@@ -23,7 +24,7 @@ const FERRAMENTAS = [
   { name: 'calivix_salvar_preset', description: 'Cria ou edita um preset. Ao editar, mande o preset inteiro (o que faltar é apagado). Para partir de uma TV já ajustada, use calivix_preset_da_tv e salve o resultado.', inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'para editar um preset existente (omita para criar)' }, nome: { type: 'string' }, descricao: { type: 'string' }, apps: { type: 'array', items: { type: 'string' }, description: 'pacotes para instalar pela Play Store da TV' }, apks: { type: 'array', items: { type: 'string' }, description: 'APKs já enviados ao servidor' }, desativar: { type: 'array', items: { type: 'string' } }, launcher: { type: 'object', description: '{ config } — dock, colunas, apps ocultos; null para não mexer no launcher' }, papeis: { type: 'object', description: '{ arquivos: [] (nomes no servidor, veja calivix_listar_arquivos), minutos: 30 (0 = fixo), ordem: sequential|shuffle, substituir: true }' }, dns: { type: 'string', description: 'DNS privado (vazio desliga; omita para não mexer)' } }, required: ['nome'] } },
   { name: 'calivix_preset_da_tv', description: 'Monta (sem salvar) um preset com o que uma TV tem hoje: launcher e dock, papéis de parede, apps conhecidos instalados e pacotes desativados pelo Calivix.', inputSchema: { type: 'object', properties: { tvId: { type: 'string' } }, required: ['tvId'] } },
   { name: 'calivix_apagar_preset', description: 'Apaga um preset (as TVs onde ele foi aplicado não mudam).', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
-  { name: 'calivix_aplicar_preset', description: 'Aplica um preset numa TV (cria uma tarefa). Apps que falharem (pagos, indisponíveis) viram avisos sem parar o resto. Partes podem ser puladas.', inputSchema: { type: 'object', properties: { tvId: { type: 'string' }, preset: { type: 'string', description: 'id ou nome do preset' }, apps: { type: 'array', items: { type: 'string' }, description: 'só estes apps do preset (omita para todos)' }, pular: { type: 'array', items: { type: 'string', enum: ['apps', 'apks', 'desativar', 'launcher', 'papeis', 'dns'] } } }, required: ['tvId', 'preset'] } },
+  { name: 'calivix_aplicar_preset', description: 'Aplica um preset numa TV (cria uma tarefa). Apps que falharem (pagos, indisponíveis) viram avisos sem parar o resto. Partes podem ser puladas.', inputSchema: { type: 'object', properties: { tvId: { type: 'string' }, preset: { type: 'string', description: 'id ou nome do preset' }, apps: { type: 'array', items: { type: 'string' }, description: 'só estes apps do preset (omita para todos)' }, pular: { type: 'array', items: { type: 'string', enum: ['apps', 'apks', 'desativar', 'launcher', 'papeis', 'dns'] } }, testarLauncher: { type: 'boolean', description: 'box de carro: inclui o teste reversível da tela inicial limpa (por padrão ela não entra; papéis vão para o fundo do sistema)' } }, required: ['tvId', 'preset'] } },
   { name: 'calivix_listar_arquivos', description: 'Arquivos guardados no servidor (papéis de parede e APKs), com o nome a usar nas tarefas e presets.', inputSchema: { type: 'object', properties: {} } },
   { name: 'calivix_listar_tarefas', description: 'Tarefas recentes (de uma TV ou de todas), com situação e resumo.', inputSchema: { type: 'object', properties: { tvId: { type: 'string' }, status: { type: 'string', enum: ['pendente', 'executando', 'concluida', 'falhou', 'cancelada'] }, limite: { type: 'integer' } } } },
   { name: 'calivix_cancelar_tarefa', description: 'Cancela uma tarefa pendente (ou presa em executando num aparelho que sumiu).', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
@@ -32,7 +33,7 @@ const FERRAMENTAS = [
 const texto = (o) => ({ content: [{ type: 'text', text: typeof o === 'string' ? o : JSON.stringify(o, null, 2) }] });
 
 export async function tratarMcp(req, res, ctx) {
-  const { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo, guardarArquivo, cadastrarTv, salvarPreset, aplicarPreset, listarArquivos, presetDaTv } = ctx;
+  const { db, banco, novaTarefa, tentarNoServidor, DADOS, VERSAO, avisar, corpo, guardarArquivo, cadastrarTv, salvarPreset, aplicarPreset, listarArquivos, presetDaTv, parearTv } = ctx;
   const auth = req.headers.authorization || '';
   if (auth !== 'Bearer ' + db.ajustes.tokenClaude) {
     res.writeHead(401, { 'content-type': 'application/json' });
@@ -66,7 +67,7 @@ export async function tratarMcp(req, res, ctx) {
         launcherLimpo: !!t.perfil?.launcher?.instalado, desativados: (t.perfil?.desativados || []).length, visto: t.visto,
         pendentes: db.tarefas.filter((x) => x.tvId === t.id && x.status === 'pendente').length })));
       case 'calivix_adicionar_tv': {
-        const tv = cadastrarTv({ nome: a.nome, local: a.local, ip: String(a.ip || '').trim(), porta: a.porta, tailnetIp: a.tailnetIp });
+        const tv = cadastrarTv({ nome: a.nome, local: a.local, ip: String(a.ip || '').trim(), porta: a.porta, tailnetIp: a.tailnetIp, tipo: a.tipo });
         const t = novaTarefa({ tvId: tv.id, titulo: 'Leitura inicial', acoes: [{ tipo: 'sondar' }, { tipo: 'inventario' }, { tipo: 'captura' }], criadaPor: 'claude' });
         await tentarNoServidor(t);
         for (let i = 0; i < 300 && t.status === 'executando'; i++) await new Promise((r) => setTimeout(r, 500));
@@ -74,6 +75,14 @@ export async function tratarMcp(req, res, ctx) {
         return texto({ tvId: tv.id, nome: cad.nome, ip: cad.ip, porta: cad.porta, leitura: { tarefa: t.id, status: t.status, erro: t.erro, log: t.log.slice(-15).map((l) => l.l) },
           modelo: cad.sondagem ? `${cad.sondagem.fabricante} ${cad.sondagem.modelo} (${cad.sondagem.plataforma}), Android ${cad.sondagem.android}` : null,
           observacao: t.status === 'pendente' ? 'O servidor não alcança esta TV agora; a leitura fica guardada para um aparelho na rede dela.' : undefined });
+      }
+      case 'calivix_parear_tv': {
+        const r = await parearTv({ ...a, criadaPor: 'claude' });
+        const t = r.tarefa;
+        if (r.portaConexao) { await tentarNoServidor(t); for (let i = 0; i < 300 && t.status === 'executando'; i++) await new Promise((ok) => setTimeout(ok, 500)); }
+        const cad = db.tvs[r.tv.id];
+        return texto({ tvId: cad.id, nome: cad.nome, tipo: cad.tipo, porta: cad.porta, guid: r.pareado.guid, leitura: { tarefa: t.id, status: t.status, erro: t.erro, log: t.log.slice(-15).map((l) => l.l) },
+          modelo: cad.sondagem ? `${cad.sondagem.fabricante} ${cad.sondagem.modelo}, Android ${cad.sondagem.android}` : null });
       }
       case 'calivix_detalhes_tv': {
         const t = db.tvs[a.tvId]; if (!t) throw new Error('TV não encontrada');
@@ -112,7 +121,7 @@ export async function tratarMcp(req, res, ctx) {
       case 'calivix_preset_da_tv': { const t = db.tvs[a.tvId]; if (!t) throw new Error('TV não encontrada'); return texto(presetDaTv(t, listarArquivos().map((x) => x.arquivo))); }
       case 'calivix_apagar_preset': { const n = db.presets.length; db.presets = db.presets.filter((p) => p.id !== a.id); if (n === db.presets.length) throw new Error('Preset não encontrado'); banco.gravar(); avisar('presets'); return texto('Preset apagado.'); }
       case 'calivix_aplicar_preset': {
-        const op = Object.fromEntries((a.pular || []).map((k) => [k, false])); if (Array.isArray(a.apps)) op.apps = a.apps;
+        const op = Object.fromEntries((a.pular || []).map((k) => [k, false])); if (Array.isArray(a.apps)) op.apps = a.apps; if (a.testarLauncher) op.launcher = 'testar';
         const t = aplicarPreset(a.tvId, a.preset, op, 'claude');
         return texto({ tarefa: t.id, status: t.status, acoes: t.acoes.map((x) => x.tipo + (x.params?.pacote ? ' ' + x.params.pacote : '')) });
       }

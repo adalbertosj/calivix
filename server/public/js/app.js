@@ -246,7 +246,7 @@ function telaInicio(el) {
   el.querySelectorAll('[data-tv]').forEach((c) => { c.onclick = () => { location.hash = '#/tv/' + c.dataset.tv; }; });
   ligarSugestoes(el);
   vigiarPendentes();
-  if (NATIVO) for (const tv of E.tvs) estaAoAlcance(tv).then((ok) => { const s = el.querySelector(`[data-alc="${tv.id}"]`); if (s) s.outerHTML = ok === 'tailnet' ? '<span class="selo ok">Pela Tailnet</span>' : ok ? '<span class="selo ok">Nesta rede</span>' : '<span class="selo">Fora de alcance</span>'; });
+  if (NATIVO) for (const tv of E.tvs) estaAoAlcance(tv).then((ok) => { const s = el.querySelector(`[data-alc="${tv.id}"]`); if (s) s.outerHTML = tv.adbTls ? '<span class="selo">Pelo servidor</span>' : ok === 'tailnet' ? '<span class="selo ok">Pela Tailnet</span>' : ok ? '<span class="selo ok">Nesta rede</span>' : '<span class="selo">Fora de alcance</span>'; });
 }
 function cartaoTv(tv) {
   const pend = E.tarefas.filter((t) => t.tvId === tv.id && t.status === 'pendente').length;
@@ -282,11 +282,22 @@ function adicionarTv(pre = {}) {
     <div class="campo"><label>Local</label><input class="ent" id="lc" placeholder="Casa, Sala, Quarto, Casa da praia…"></div>
     <div class="campo"><label>Endereço IP da TV</label><input class="ent" id="ip" inputmode="decimal" value="${esc(pre.ip || '')}" placeholder="192.168.0.43">
       <div class="mini" style="margin-top:6px">A porta padrão é 5555. Se a TV box usar outra, escreva junto: <b>192.168.0.4:5188</b>.</div></div>
+    <div class="campo"><label>Tipo</label><select class="ent" id="tp"><option value="tv">TV ou TV box</option><option value="carro">Box de carro (CarPlay / Android Auto)</option></select>
+      <div class="mini" style="margin-top:6px">Na box de carro, a tela inicial de fábrica fica (é ela que se ajusta ao painel do carro) e os papéis de parede vão para o fundo do sistema.</div></div>
+    <label class="mini" style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><input type="checkbox" id="wf"> A TV só tem <b>Depuração por Wi-Fi</b> (com código de pareamento)</label>
+    <div id="par" class="oculto">
+      <div class="campo"><label>Endereço na Tailnet (100.x), se a TV tiver Tailscale</label><input class="ent" id="ts" inputmode="decimal" placeholder="100.x.y.z"></div>
+      <div class="linha" style="gap:10px"><div class="campo" style="flex:1"><label>Porta de pareamento</label><input class="ent" id="pp" inputmode="numeric" placeholder="38117"></div>
+        <div class="campo" style="flex:1"><label>Código</label><input class="ent" id="cd" inputmode="numeric" maxlength="6" placeholder="6 dígitos"></div></div>
+      <div class="mini" style="margin-bottom:14px">Na TV: Opções do desenvolvedor › <b>Depuração por Wi-Fi</b> › <b>Parear o dispositivo com um código de pareamento</b>. Use a porta e o código dessa janela e deixe-a aberta. A Depuração por Wi-Fi só liga com a TV num Wi-Fi; o servidor do Calivix é quem fala com ela.</div>
+    </div>
     <details class="mini" style="margin-bottom:14px"><summary>Antes: ligue a depuração na TV</summary><p>Configurações › Sistema › Sobre › aperte OK em <b>Build</b> 7 vezes. Volte › Opções do desenvolvedor › ligue <b>Depuração USB</b> (e <b>Depuração ADB pela rede</b>, se houver). Na primeira conexão, a TV pergunta <b>"Permitir depuração USB?"</b>: marque <b>Sempre permitir</b>.</p></details>
     <div class="linha"><span class="espaco"></span><button class="bt" data-c>Cancelar</button><button class="bt pri" data-ok>Adicionar e ler a TV</button></div>
     <div class="mini" id="msg" style="margin-top:10px"></div>`, (j, fechar) => {
     $('[data-c]', j).onclick = fechar;
+    $('#wf', j).onchange = () => $('#par', j).classList.toggle('oculto', !$('#wf', j).checked);
     $('[data-ok]', j).onclick = async () => {
+      if ($('#wf', j).checked) return parearNova(j);
       const end = lerEndereco($('#ip', j).value);
       if (!end) return toast('Informe o IP da TV (ex.: 192.168.0.43 ou 192.168.0.4:5188)');
       const { ip, porta } = end;
@@ -298,7 +309,7 @@ function adicionarTv(pre = {}) {
           msg.textContent = 'Conectando à TV…';
           sond = await motor.lerTvNova(ip, porta, () => { msg.innerHTML = '<b>Olhe a TV:</b> confirme "Permitir depuração USB?" marcando <b>Sempre permitir</b>.'; });
         }
-        const tv = await api('POST', '/api/tvs', { nome: $('#nm', j).value.trim() || sond?.modelo || 'TV', local: $('#lc', j).value.trim(), ip, porta, castId: pre.castId, serial: sond?.serial, sondagem: sond });
+        const tv = await api('POST', '/api/tvs', { nome: $('#nm', j).value.trim() || sond?.modelo || 'TV', local: $('#lc', j).value.trim(), ip, porta, castId: pre.castId, serial: sond?.serial, sondagem: sond, tipo: $('#tp', j).value });
         fechar();
         await atualizar();
         location.hash = '#/tv/' + tv.id;
@@ -306,6 +317,23 @@ function adicionarTv(pre = {}) {
       } catch (e) { msg.innerHTML = `<span class="selo ruim">${esc(e.message)}</span>`; $('[data-ok]', j).disabled = false; }
     };
   });
+}
+
+// Depuração por Wi-Fi: o servidor pareia com o código, acha a porta de conexão e já agenda a leitura.
+async function parearNova(j, tvId) {
+  const msg = $('#msg', j), bt = $('[data-ok]', j);
+  const ip = ($('#ip', j)?.value || '').trim().split(':')[0], tailnetIp = ($('#ts', j)?.value || '').trim();
+  const portaPareamento = $('#pp', j).value.trim(), codigo = $('#cd', j).value.trim();
+  if (!tvId && !ip && !tailnetIp) return toast('Informe o IP da TV');
+  if (!portaPareamento || !/^\d{6}$/.test(codigo)) return toast('Informe a porta de pareamento e o código de 6 dígitos');
+  bt.disabled = true; msg.textContent = 'Pareando e procurando a porta da depuração (pode levar 1 minuto)…';
+  try {
+    const r = await api('POST', tvId ? `/api/tvs/${tvId}/parear` : '/api/tvs/parear', tvId ? { portaPareamento, codigo } : {
+      nome: $('#nm', j).value.trim() || 'TV box', local: $('#lc', j).value.trim(), ip, tailnetIp, tipo: $('#tp', j).value, portaPareamento, codigo });
+    toast(r.portaConexao ? 'Pareado. Lendo a TV…' : 'Pareado. A leitura fica pendente até a TV voltar ao alcance.');
+    j.closest('.veu')?.remove();
+    await atualizar(); location.hash = '#/tv/' + r.tv.id;
+  } catch (e) { msg.innerHTML = `<span class="selo ruim">${esc(e.message)}</span>`; bt.disabled = false; }
 }
 
 // ---------- descobrir ----------
@@ -604,15 +632,23 @@ function abaConfig(c, tv) {
     <div class="campo"><label>Local</label><input class="ent" id="lc" value="${esc(tv.local || '')}" placeholder="Casa, Sala, Casa da praia…"></div>
     <div class="campo"><label>Endereço na rede da TV (com <b>:porta</b> se não for 5555)</label><input class="ent" id="ip" value="${esc(mostrarEndereco(tv))}"></div>
     <div class="campo"><label>Endereço na Tailnet (opcional, se a TV tiver o app Tailscale)</label><input class="ent" id="ts" value="${esc(tv.tailnetIp || '')}" placeholder="100.x.y.z"></div>
+    <div class="campo"><label>Tipo</label><select class="ent" id="tp"><option value="tv" ${tv.tipo !== 'carro' ? 'selected' : ''}>TV ou TV box</option><option value="carro" ${tv.tipo === 'carro' ? 'selected' : ''}>Box de carro (CarPlay / Android Auto)</option></select></div>
     <div class="linha"><span class="espaco"></span><button class="bt pri" id="salvar">Salvar</button></div></div>
+    <h2>Depuração por Wi-Fi</h2><div class="cartao" style="max-width:640px"><p class="sub">${tv.adbTls ? `Esta TV usa a depuração por Wi-Fi (porta ${tv.porta}, que muda quando ela é religada; o servidor procura sozinho). Só o servidor fala com ela.` : 'Use se a TV só tiver a Depuração por Wi-Fi com código de pareamento (Android 11+).'}</p>
+      <div class="linha" style="gap:10px"><div class="campo" style="flex:1"><label>Porta de pareamento</label><input class="ent" id="pp" inputmode="numeric"></div>
+        <div class="campo" style="flex:1"><label>Código</label><input class="ent" id="cd" inputmode="numeric" maxlength="6"></div></div>
+      <div class="linha"><span class="espaco"></span><button class="bt" data-ok>Parear</button></div><div class="mini" id="msg"></div></div>
     <h2>Desfazer</h2><div class="cartao" style="max-width:640px"><p class="sub">${tv.registro ? `Estado anterior guardado em ${new Date(tv.registro.criadoEm).toLocaleString('pt-BR')} (${tv.registro.pacotes} pacotes).` : 'Ainda não há estado anterior guardado (nada foi alterado pelo Calivix).'}</p>
-    <button class="bt perigo" id="rest" ${tv.registro ? '' : 'disabled'}>Restaurar tudo como estava</button></div>
+    <button class="bt perigo" id="rest" ${tv.registro ? '' : 'disabled'}>Restaurar tudo como estava</button>
+    ${tv.perfil?.testeLauncher ? `<p class="sub" style="margin-top:14px">O launcher do Calivix está em teste como tela inicial. A de fábrica (${esc(tv.perfil.homeDeFabrica || '')}) continua instalada.</p><button class="bt pri" id="volta">Voltar à tela inicial de fábrica</button>` : ''}</div>
     <h2>Remover</h2><div class="cartao" style="max-width:640px"><p class="sub">Tira a TV do Calivix. Nada muda na TV.</p><button class="bt perigo" id="rem">Remover esta TV</button></div>`;
   $('#salvar').onclick = async () => {
     const end = lerEndereco($('#ip').value);
     if (!end) return toast('Endereço inválido (ex.: 192.168.0.43 ou 192.168.0.4:5188)');
-    await api('PATCH', `/api/tvs/${tv.id}`, { nome: $('#nm').value, local: $('#lc').value, ip: end.ip, porta: end.porta, tailnetIp: $('#ts').value.trim() }); toast('Salvo'); atualizar();
+    await api('PATCH', `/api/tvs/${tv.id}`, { nome: $('#nm').value, local: $('#lc').value, ip: end.ip, porta: end.porta, tailnetIp: $('#ts').value.trim(), tipo: $('#tp').value }); toast('Salvo'); atualizar();
   };
+  $('[data-ok]', c).onclick = () => parearNova(c, tv.id);
+  if ($('#volta')) $('#volta').onclick = () => pedir(tv, 'Voltar à tela inicial de fábrica', [{ tipo: 'voltar_tela_inicial' }, { tipo: 'captura' }]);
   $('#rest').onclick = async () => { if (await confirmar('Restaurar tudo?', 'Reativa tudo o que estava ativado antes do Calivix e devolve a tela inicial original.', 'Restaurar', true)) pedir(tv, 'Restaurar tudo', [{ tipo: 'restaurar' }, { tipo: 'captura' }]); };
   $('#rem').onclick = async () => { if (await confirmar('Remover ' + tv.nome + '?', 'O perfil, as tarefas pendentes e a captura serão apagados do servidor. A TV não é alterada.', 'Remover', true)) { await api('DELETE', `/api/tvs/${tv.id}`); location.hash = '#/'; atualizar(); } };
 }
@@ -858,30 +894,34 @@ function aplicarPresetJanela(preset, tv) {
   let p = preset || ps[0], alvo = tv || E.tvs[0];
   if (!p || !alvo) return toast(p ? 'Cadastre uma TV primeiro' : 'Crie um preset primeiro');
   janela('<div id="ap"></div>', (j, fechar) => {
-    let pular = {}, apps = new Set(p.apps);
+    const carro = () => alvo.tipo === 'carro';
+    let pular = carro() ? { launcher: true } : {}, apps = new Set(p.apps);
     const desenhar = () => {
       const tem = new Set(alvo.inventario?.pacotes || []);
+      const fotos = (p.papeis?.arquivos || []).filter((a) => !/\.mp4$/i.test(a)).length;
       const partes = [['apps', p.apps.length && `Instalar ${p.apps.length} app(s) pela Play Store`], ['apks', p.apks?.length && `Instalar ${p.apks.length} APK(s)`],
-        ['desativar', p.desativar.length && `Desativar ${p.desativar.length} pacote(s)`], ['launcher', p.launcher && 'Tela inicial limpa e dock'],
-        ['papeis', p.papeis && `${p.papeis.arquivos.length} papel(éis) de parede`], ['dns', p.dns != null && (p.dns ? 'DNS privado ' + p.dns : 'Desligar o DNS privado')]].filter(([, t]) => t);
+        ['desativar', p.desativar.length && `Desativar ${p.desativar.length} pacote(s)`], ['launcher', p.launcher && (carro() ? 'Testar a tela inicial limpa (a de fábrica fica instalada; dá para voltar)' : 'Tela inicial limpa e dock')],
+        ['papeis', p.papeis && (carro() ? `${fotos} papel(éis) no fundo do sistema (a tela inicial de fábrica fica)` : `${p.papeis.arquivos.length} papel(éis) de parede`)], ['dns', p.dns != null && (p.dns ? 'DNS privado ' + p.dns : 'Desligar o DNS privado')]].filter(([, t]) => t);
       $('#ap', j).innerHTML = `<h2>Aplicar preset</h2>
         <div class="campo"><label>Preset</label><select class="ent" id="aP">${ps.map((x) => `<option value="${x.id}" ${x.id === p.id ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select></div>
         <div class="campo"><label>TV</label><select class="ent" id="aT">${E.tvs.map((t) => `<option value="${t.id}" ${t.id === alvo.id ? 'selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></div>
         <div class="lista">${partes.map(([k, t]) => `<label class="item"><input type="checkbox" class="caixa" data-parte="${k}" ${pular[k] ? '' : 'checked'}><div class="txt"><div class="tit">${esc(t)}</div></div></label>`).join('')}</div>
         ${p.apps.length && !pular.apps ? `<div class="mini" style="margin:12px 0 6px">Apps (desmarque os que não quer nesta TV)</div><div class="linha" style="flex-wrap:wrap;gap:8px">${p.apps.map((x) =>
           tem.has(x) ? `<span class="selo ok">${esc(nomeApp(x))} ✓</span>` : `<button class="escolha ${apps.has(x) ? 'sim' : ''}" data-aapp="${esc(x)}">${apps.has(x) ? '✓ ' : ''}${esc(nomeApp(x))}</button>`).join('')}</div>` : ''}
-        ${p.papeis && !pular.papeis && !p.launcher && !alvo.perfil?.launcher?.instalado ? '<p class="mini" style="margin-top:10px">⚠ Papéis de parede precisam da tela inicial limpa, que esta TV ainda não tem.</p>' : ''}
+ ${carro() ? `<p class="mini" style="margin-top:10px">Box de carro: a tela inicial de fábrica é quem se ajusta ao painel, então ela não é trocada nem desativada.${p.papeis && fotos < p.papeis.arquivos.length ? ' Os papéis animados ficam de fora (o fundo do sistema só mostra imagens).' : ''}</p>` : ''}
+        ${p.papeis && !carro() && !pular.papeis && !p.launcher && !alvo.perfil?.launcher?.instalado ? '<p class="mini" style="margin-top:10px">⚠ Papéis de parede precisam da tela inicial limpa, que esta TV ainda não tem.</p>' : ''}
         <p class="mini" style="margin-top:12px">Apps que não estiverem disponíveis nesta TV são pulados com aviso; o resto continua.</p>
         <div class="linha" style="margin-top:14px"><span class="espaco"></span><button class="bt" id="aN">Cancelar</button><button class="bt pri" id="aS">Aplicar na ${esc(alvo.nome)}</button></div>`;
       $('#aP', j).onchange = (e) => { p = ps.find((x) => x.id === e.target.value); pular = {}; apps = new Set(p.apps); desenhar(); };
-      $('#aT', j).onchange = (e) => { alvo = tvPorId(e.target.value); desenhar(); };
+      $('#aT', j).onchange = (e) => { alvo = tvPorId(e.target.value); if (carro()) pular.launcher = true; desenhar(); };
       j.querySelectorAll('[data-parte]').forEach((c) => { c.onchange = () => { pular[c.dataset.parte] = !c.checked; desenhar(); }; });
       j.querySelectorAll('[data-aapp]').forEach((b) => { b.onclick = () => { const x = b.dataset.aapp; apps.has(x) ? apps.delete(x) : apps.add(x); desenhar(); }; });
       $('#aN', j).onclick = fechar;
       $('#aS', j).onclick = async () => {
         const op = { ...Object.fromEntries(Object.entries(pular).filter(([, v]) => v).map(([k]) => [k, false])) };
         if (!pular.apps) op.apps = [...apps].filter((x) => !tem.has(x));
-        const acoes = acoesDoPreset(p, op);
+        if (carro() && !pular.launcher) op.launcher = 'testar';
+        const acoes = acoesDoPreset(p, op, alvo);
         if (!acoes.length) return toast('Nada para aplicar');
         fechar();
         try { await pedir(alvo, 'Preset: ' + p.nome, acoes); location.hash = '#/tv/' + alvo.id + '/tarefas'; } catch (e) { toast(e.message); }

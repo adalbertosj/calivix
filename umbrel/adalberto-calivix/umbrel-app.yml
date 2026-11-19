@@ -2,7 +2,7 @@ manifestVersion: 1
 id: adalberto-calivix
 category: automation
 name: Calivix
-version: "1.0.6"
+version: "1.0.7"
 tagline: Ajuste fino para suas TVs Android e Google TV
 description: >-
   Calivix guarda os perfis das suas TVs e aplica os ajustes pela rede.
@@ -27,10 +27,10 @@ description: >-
 
   Tudo fica no seu servidor.
 releaseNotes: >-
-  Presets: conjuntos de ajustes com nome (apps para instalar pela Play Store, tela inicial limpa com o dock,
-  papéis de parede, pacotes para desativar e DNS) que se aplicam de uma vez em qualquer TV. Crie do zero na
-  nova aba Presets ou a partir de uma TV já ajustada (Visão geral › Criar preset desta TV). Um app que não
-  estiver disponível numa TV é pulado com aviso, sem parar o resto.
+  TV boxes com Depuração por Wi-Fi (Android 11+): o servidor pareia com o código de 6 dígitos e acha sozinho a
+  porta, que muda a cada vez que a box liga. Novo tipo "Box de carro" (CarPlay / Android Auto): a tela inicial de
+  fábrica, que se ajusta ao painel do carro, nunca é trocada; os papéis de parede de um preset vão para o fundo do
+  sistema, e a tela inicial limpa pode ser testada e desfeita com um toque.
 developer: Adalberto
 website: https://github.com/adalbertosj/calivix
 submitter: Adalberto

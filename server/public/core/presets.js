@@ -47,15 +47,23 @@ export function descreverPreset(p) {
 // A lista de ações da tarefa. Apps primeiro (a Play Store precisa da tela), depois limpeza, launcher e
 // papéis. Um app que falhar (pago, indisponível nesta TV) não interrompe o resto: a ação é "opcional".
 // opcoes: { apps, apks, desativar, launcher, papeis, dns } (false pula a parte) e apps: [] para escolher só alguns.
-export function acoesDoPreset(p, opcoes = {}) {
+// tv.tipo 'carro' (box de CarPlay / Android Auto): a tela inicial de fábrica fica — o launcher só entra com
+// opcoes.launcher === 'testar' (teste reversível) e os papéis vão para o fundo do sistema (só imagens).
+export function acoesDoPreset(p, opcoes = {}, tv = null) {
+  const carro = tv?.tipo === 'carro';
   const usa = (k) => opcoes[k] !== false;
   const acoes = [];
   const apps = Array.isArray(opcoes.apps) ? p.apps.filter((a) => opcoes.apps.includes(a)) : usa('apps') ? p.apps : [];
   for (const pacote of apps) acoes.push({ tipo: 'instalar_loja', params: { pacote }, opcional: true });
   if (usa('apks')) for (const arquivo of p.apks || []) acoes.push({ tipo: 'instalar_apk', params: { arquivo }, opcional: true });
   if (usa('desativar') && p.desativar?.length) acoes.push({ tipo: 'desativar', params: { pacotes: p.desativar } });
-  if (usa('launcher') && p.launcher) acoes.push({ tipo: 'instalar_launcher', params: { config: p.launcher.config, mesclar: true } });
-  if (usa('papeis') && p.papeis) acoes.push({ tipo: 'papel_de_parede', params: { ...p.papeis } });
+  if (carro) {
+    if (usa('papeis') && p.papeis) acoes.push({ tipo: 'papel_sistema', params: { ...p.papeis } });
+    if (opcoes.launcher === 'testar' && p.launcher) acoes.push({ tipo: 'testar_launcher', params: { config: p.launcher.config } });
+  } else {
+    if (usa('launcher') && p.launcher) acoes.push({ tipo: 'instalar_launcher', params: { config: p.launcher.config, mesclar: true } });
+    if (usa('papeis') && p.papeis) acoes.push({ tipo: 'papel_de_parede', params: { ...p.papeis } });
+  }
   if (usa('dns') && p.dns != null) acoes.push({ tipo: 'dns', params: { servidor: p.dns } });
   if (!acoes.length) return acoes;
   acoes.push({ tipo: 'tecla', params: { tecla: 'HOME' }, opcional: true }, { tipo: 'captura', opcional: true });
