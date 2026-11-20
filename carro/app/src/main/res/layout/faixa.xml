@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- B · Faixa de bordo: relógio e velocidade no alto; YouTube, música e apps numa faixa embaixo. -->
+<com.calivix.carro.Escala xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+<LinearLayout android:layout_width="1792px" android:layout_height="700px" android:orientation="vertical" android:padding="28px">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0px" android:layout_weight="1" android:orientation="horizontal">
+        <LinearLayout android:id="@+id/relogio_card" android:layout_width="wrap_content" android:layout_height="wrap_content" android:background="@drawable/bg_card"
+            android:orientation="vertical" android:paddingStart="28px" android:paddingEnd="28px" android:paddingTop="18px" android:paddingBottom="18px">
+            <TextView android:id="@+id/relogio" style="@style/Texto.Numero" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="120px" />
+            <TextView android:id="@+id/data" style="@style/Texto.Fraco" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8px" android:textSize="26px" />
+        </LinearLayout>
+        <FrameLayout android:layout_width="0px" android:layout_weight="1" android:layout_height="wrap_content" android:layout_marginStart="14px" android:layout_marginEnd="14px">
+            <HorizontalScrollView android:id="@+id/grupos_rolagem" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="end|center_vertical" android:scrollbars="none" android:overScrollMode="never" android:fadingEdgeLength="40px" android:requiresFadingEdge="horizontal">
+                <LinearLayout android:id="@+id/grupos" android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" />
+            </HorizontalScrollView>
+        </FrameLayout>
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:background="@drawable/bg_card" android:orientation="vertical"
+            android:padding="20px" android:gravity="center_horizontal">
+            <TextView android:id="@+id/rede" style="@style/Chip" android:layout_width="wrap_content" android:layout_height="wrap_content" android:background="@drawable/bg_chip_azul" android:textColor="#CFE0FF" />
+            <TextView android:id="@+id/vpn" style="@style/Chip" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10px" android:background="@drawable/bg_chip_verde" android:textColor="#9FF0C4" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="200px" android:layout_height="wrap_content" android:layout_marginStart="14px" android:background="@drawable/bg_card" android:orientation="vertical"
+            android:gravity="center" android:paddingTop="14px" android:paddingBottom="14px">
+            <TextView android:id="@+id/velocidade" style="@style/Texto.Numero" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="88px" android:text="0" />
+            <TextView style="@style/Texto.Fraco" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="22px" android:text="km/h" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="300px" android:orientation="horizontal">
+        <FrameLayout android:layout_width="712px" android:layout_height="match_parent">
+            <include layout="@layout/yt_largo" />
+        </FrameLayout>
+        <FrameLayout android:layout_width="420px" android:layout_height="match_parent" android:layout_marginStart="16px">
+            <include layout="@layout/musica" />
+        </FrameLayout>
+        <GridLayout android:id="@+id/apps" android:layout_width="0px" android:layout_weight="1" android:layout_height="match_parent" android:layout_marginStart="16px"
+            android:columnCount="3" android:rowCount="1" android:tag="bloco" />
+    </LinearLayout>
+</LinearLayout>
+</com.calivix.carro.Escala>

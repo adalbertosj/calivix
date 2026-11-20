@@ -443,6 +443,50 @@ export async function atualizarLauncher(adb, apk, log) {
   log('✓ launcher atualizado');
 }
 
+// ---------- Calivix Carro (tela inicial própria da box de carro, ver carro/) ----------
+export const CARRO = 'com.calivix.carro';
+export const PASTA_PAPEIS_CARRO = '/sdcard/Calivix/papeis';
+const PERMISSOES_CARRO = ['android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION', 'android.permission.WRITE_SECURE_SETTINGS',
+  'android.permission.READ_MEDIA_IMAGES', 'android.permission.READ_MEDIA_VIDEO', 'android.permission.READ_EXTERNAL_STORAGE'];
+
+// Instala/atualiza o Calivix Carro e concede o que ele precisa (GPS, mídia tocando, manter a depuração por Wi-Fi,
+// ler os papéis de /sdcard/Calivix/papeis). inicio: true o põe como tela inicial (a de fábrica continua instalada).
+export async function instalarCarro(adb, apk, log, { inicio = false } = {}) {
+  await adb.enviarArquivo(apk, '/data/local/tmp/calivix-carro.apk', 0o644);
+  const r = limpar(await adb.shell('pm install -r /data/local/tmp/calivix-carro.apk; rm -f /data/local/tmp/calivix-carro.apk', 180000)).trim();
+  if (!/Success/.test(r)) throw new Error('A box recusou o Calivix Carro: ' + r.split('\n').pop());
+  log('✓ Calivix Carro instalado');
+  const anterior = await homeAtual(adb);
+  await adb.shell(PERMISSOES_CARRO.map((x) => `pm grant ${CARRO} ${x} 2>/dev/null`).join('; ')
+    + `; cmd notification allow_listener ${CARRO}/${CARRO}.Ouvinte; appops set ${CARRO} RUN_ANY_IN_BACKGROUND allow; appops set ${CARRO} MANAGE_EXTERNAL_STORAGE allow`
+    + `; appops set com.google.android.youtube PICTURE_IN_PICTURE allow; mkdir -p ${PASTA_PAPEIS_CARRO}`
+    + `; am broadcast -n ${CARRO}/.Depuracao -f 0x01000020 >/dev/null`);
+  log('✓ permissões: GPS, mídia tocando, depuração por Wi-Fi sempre ligada, papéis próprios e janela flutuante do YouTube');
+  if (!inicio) return { anterior };
+  await adb.shell(`cmd package set-home-activity --user 0 ${CARRO}/.Inicio; am start -a android.intent.action.MAIN -c android.intent.category.HOME`);
+  const agora = await homeAtual(adb);
+  if (!agora.startsWith(CARRO + '/')) {
+    if (anterior) await adb.shell(`cmd package set-home-activity --user 0 ${anterior}`);
+    throw new Error('O Calivix Carro não abriu como tela inicial; a anterior foi devolvida.');
+  }
+  log(`✓ Calivix Carro é a tela inicial (a de fábrica, ${anterior}, continua instalada)`);
+  return { anterior };
+}
+
+// Papéis do Calivix Carro (fotos e vídeos .mp4), em /sdcard/Calivix/papeis; o app os percebe sozinho.
+export async function papeisCarro(adb, arquivos, log, { substituir = false } = {}) {
+  await adb.shell(`mkdir -p ${PASTA_PAPEIS_CARRO}` + (substituir ? `; rm -f ${PASTA_PAPEIS_CARRO}/*` : ''));
+  for (const a of arquivos) {
+    if (!/\.(jpe?g|png|webp|mp4)$/i.test(a.nome)) { log('⚠ ignorado (não é imagem nem .mp4): ' + a.nome); continue; }
+    await adb.enviarArquivo(a.dados, `${PASTA_PAPEIS_CARRO}/${a.nome}`, 0o644);
+    log('✓ ' + a.nome);
+  }
+  await adb.shell(`am broadcast -a com.calivix.carro.PAPEIS -p ${CARRO} >/dev/null 2>&1`);
+  const nomes = limpar(await adb.shell(`ls -1 ${PASTA_PAPEIS_CARRO} 2>/dev/null`)).split('\n').map((x) => x.trim()).filter(Boolean);
+  log(`✓ ${nomes.length} papel(éis) no Calivix Carro`);
+  return nomes;
+}
+
 // Apps de TV mais pedidos, com o pacote da Play Store (a tela "Instalar app" e o Claude partem daqui).
 export const LOJA = [
   { pacote: 'com.tailscale.ipn', nome: 'Tailscale', tipo: 'Rede' },

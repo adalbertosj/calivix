@@ -1,0 +1,31 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.calivix.carro'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.calivix.carro'
+        minSdk 29
+        targetSdk 34
+        versionCode 2
+        versionName '1.1'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+            // instalado pelo Calivix (ADB), nunca publicado: assinatura de depuração
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

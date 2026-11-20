@@ -1,0 +1,7 @@
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}
+// O projeto fica no iCloud; a compilação vai para fora dele (o iCloud cria cópias "arquivo 2" que quebram o build).
+allprojects {
+    layout.buildDirectory = file("${System.getProperty('user.home')}/Library/Caches/calivix-carro/${project.name}")
+}

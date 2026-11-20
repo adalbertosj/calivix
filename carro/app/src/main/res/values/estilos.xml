@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Tema" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackgroundCacheHint">@null</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">#262B36</item>
+        <item name="android:colorAccent">#D4002A</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Activity</item>
+    </style>
+    <style name="Tema.Escuro">
+        <item name="android:windowShowWallpaper">false</item>
+        <item name="android:windowBackground">@color/fundo</item>
+    </style>
+    <style name="Texto">
+        <item name="android:textColor">#F4F6FB</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+    <style name="Texto.Numero">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">-0.03</item>
+    </style>
+    <style name="Texto.Fraco">
+        <item name="android:textColor">#C3CCE0</item>
+    </style>
+    <style name="Chip" parent="Texto">
+        <item name="android:paddingStart">16px</item>
+        <item name="android:paddingEnd">16px</item>
+        <item name="android:paddingTop">8px</item>
+        <item name="android:paddingBottom">8px</item>
+        <item name="android:textSize">18px</item>
+    </style>
+    <style name="BotaoMidia">
+        <item name="android:scaleType">center</item>
+        <item name="android:background">@drawable/bg_botao</item>
+    </style>
+    <style name="AtalhoYt" parent="Texto">
+        <item name="android:background">@drawable/bg_yt_escuro</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textSize">21px</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:paddingStart">22px</item>
+        <item name="android:paddingEnd">22px</item>
+    </style>
+</resources>

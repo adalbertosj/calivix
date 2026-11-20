@@ -1,6 +1,6 @@
 {
   "name": "calivix-mobile",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
   "description": "Calivix para iPhone, iPad e Android (Capacitor)",
   "type": "module",

@@ -17,6 +17,8 @@ export const ACOES = {
   papel_sistema: 'Papéis no fundo do sistema, mantendo a tela inicial de fábrica (box de carro) — { arquivos: [] (imagens; .mp4 fica de fora), minutos: 30 (troca, e também a cada partida; 0 = fixo), ordem, substituir }',
   testar_launcher: 'Testar o launcher limpo como tela inicial sem desativar a de fábrica — { config } (volta com voltar_tela_inicial)',
   voltar_tela_inicial: 'Devolver a tela inicial de fábrica depois de um teste — { home } (opcional: a guardada no teste)',
+  instalar_carro: 'Box de carro: instalar/atualizar a tela inicial Calivix Carro com as permissões dela — { inicio: false } (true: vira a tela inicial; volta com voltar_tela_inicial)',
+  papeis_carro: 'Box de carro: papéis do Calivix Carro (fotos e .mp4 animados) — { arquivos: [], substituir: false }',
   captura: 'Tirar uma captura da tela da TV',
   tecla: 'Apertar uma tecla do controle — { tecla: "HOME" | "OK" | … }',
   abrir_app: 'Abrir um aplicativo — { pacote }',
@@ -115,6 +117,18 @@ export async function executarTarefa(ctx, tvCad, tarefa) {
           const home = p.home || tvCad.perfil?.homeDeFabrica;
           await tv.voltarTelaInicial(adb, home, log);
           resultado.testeLauncher = false;
+          break;
+        }
+        case 'instalar_carro': {
+          if (!ctx.apkCarro) throw new Error('Só o servidor do Calivix instala o Calivix Carro. A tarefa fica para o servidor.');
+          const r = await tv.instalarCarro(adb, await ctx.apkCarro(), log, { inicio: !!p.inicio });
+          if (p.inicio) { if (r.anterior && !r.anterior.startsWith(tv.CARRO)) resultado.homeDeFabrica = r.anterior; resultado.testeLauncher = true; }
+          break;
+        }
+        case 'papeis_carro': {
+          const arqs = [];
+          for (const a of p.arquivos || []) arqs.push({ nome: String(a).replace(/^[0-9a-f]{16}-/, ''), dados: await ctx.arquivo(a) });
+          resultado.papeisCarro = await tv.papeisCarro(adb, arqs, log, p);
           break;
         }
         case 'captura': resultado.captura = await tv.captura(adb); log('✓ captura feita'); break;

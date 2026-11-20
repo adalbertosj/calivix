@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bloco do YouTube, vertical (Palco). Mesmos ids do yt_largo. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/yt_bloco" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/bg_yt_card" android:clipToOutline="true">
+
+    <ImageView android:id="@+id/yt_fundo" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="centerCrop" android:alpha="0.9" android:importantForAccessibility="no" android:visibility="gone" />
+    <View android:id="@+id/yt_scrim" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#B30B0206" android:visibility="gone" />
+
+    <LinearLayout android:id="@+id/yt_tocando" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:orientation="vertical" android:padding="26px" android:visibility="gone">
+        <FrameLayout android:id="@+id/yt_miniatura_caixa" android:layout_width="match_parent" android:layout_height="0px" android:layout_weight="1"
+            android:background="@drawable/bg_thumb" android:clipToOutline="true" android:elevation="16px" android:foreground="@drawable/bg_toque">
+            <ImageView android:id="@+id/yt_miniatura" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="centerCrop" android:contentDescription="Voltar ao vídeo" />
+            <TextView android:id="@+id/yt_duracao" style="@style/Texto" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_gravity="end|bottom" android:layout_margin="12px" android:background="@drawable/bg_selo"
+                android:paddingStart="10px" android:paddingEnd="10px" android:paddingTop="4px" android:paddingBottom="4px" android:textSize="17px" android:textStyle="bold" />
+        </FrameLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="24px" android:layout_marginTop="18px" android:orientation="horizontal" android:gravity="bottom">
+            <LinearLayout android:id="@+id/yt_eq" android:layout_width="wrap_content" android:layout_height="20px" android:orientation="horizontal" android:gravity="bottom">
+                <View android:id="@+id/yt_eq1" android:layout_width="5px" android:layout_height="20px" android:background="@drawable/bg_barra" />
+                <View android:id="@+id/yt_eq2" android:layout_width="5px" android:layout_height="20px" android:layout_marginStart="4px" android:background="@drawable/bg_barra" />
+                <View android:id="@+id/yt_eq3" android:layout_width="5px" android:layout_height="20px" android:layout_marginStart="4px" android:background="@drawable/bg_barra" />
+            </LinearLayout>
+            <TextView android:id="@+id/yt_estado" style="@style/Texto" android:layout_width="0px" android:layout_weight="1" android:layout_height="wrap_content" android:layout_marginStart="12px"
+                android:text="TOCANDO AGORA" android:textColor="#FFFFB3C1" android:textSize="16px" android:textStyle="bold" android:letterSpacing="0.12" />
+            <ImageView android:layout_width="34px" android:layout_height="24px" android:src="@drawable/ic_yt" android:importantForAccessibility="no" />
+        </LinearLayout>
+        <TextView android:id="@+id/yt_titulo" style="@style/Texto" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10px" android:textSize="28px" android:textStyle="bold" android:maxLines="1" android:ellipsize="end" />
+        <TextView android:id="@+id/yt_canal" style="@style/Texto" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="6px" android:textColor="#CCFFFFFF" android:textSize="20px" android:maxLines="1" android:ellipsize="end" />
+        <ProgressBar android:id="@+id/yt_progresso" style="@android:style/Widget.ProgressBar.Horizontal"
+            android:layout_width="match_parent" android:layout_height="7px" android:layout_marginTop="14px" android:max="1000" android:progressDrawable="@drawable/progresso_fino" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6px" android:orientation="horizontal">
+            <TextView android:id="@+id/yt_tempo_atual" style="@style/Texto" android:layout_width="0px" android:layout_weight="1" android:layout_height="wrap_content" android:textColor="#CCFFFFFF" android:textSize="15px" />
+            <TextView android:id="@+id/yt_tempo_total" style="@style/Texto" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#CCFFFFFF" android:textSize="15px" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="82px" android:layout_marginTop="10px" android:orientation="horizontal" android:gravity="center_vertical">
+            <FrameLayout android:id="@+id/yt_menos10" android:layout_width="74px" android:layout_height="74px" android:background="@drawable/bg_circulo_claro" android:foreground="@drawable/bg_toque" android:contentDescription="Voltar 10 segundos">
+                <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:padding="15px" android:src="@drawable/ic_volta" android:importantForAccessibility="no" />
+                <TextView style="@style/Texto" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="center" android:layout_marginTop="5px" android:text="10" android:textSize="14px" android:textStyle="bold" />
+            </FrameLayout>
+            <ImageButton android:id="@+id/yt_play" android:layout_width="82px" android:layout_height="82px" android:layout_marginStart="18px"
+                android:background="@drawable/bg_circulo_branco" android:padding="23px" android:scaleType="fitCenter" android:src="@drawable/ic_pause_vermelho" android:contentDescription="Tocar ou pausar" />
+            <FrameLayout android:id="@+id/yt_mais10" android:layout_width="74px" android:layout_height="74px" android:layout_marginStart="18px" android:background="@drawable/bg_circulo_claro" android:foreground="@drawable/bg_toque" android:contentDescription="Avançar 10 segundos">
+                <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:padding="15px" android:scaleX="-1" android:src="@drawable/ic_volta" android:importantForAccessibility="no" />
+                <TextView style="@style/Texto" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="center" android:layout_marginTop="5px" android:text="10" android:textSize="14px" android:textStyle="bold" />
+            </FrameLayout>
+            <Space android:layout_width="0px" android:layout_weight="1" android:layout_height="1px" />
+            <TextView android:id="@+id/yt_abrir" style="@style/Texto" android:layout_width="wrap_content" android:layout_height="64px" android:background="@drawable/bg_pilula_contorno"
+                android:foreground="@drawable/bg_toque" android:gravity="center" android:paddingStart="34px" android:paddingEnd="34px" android:text="Abrir" android:textSize="21px" android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <FrameLayout android:id="@+id/yt_parado" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:background="@drawable/bg_yt_vermelho" android:foreground="@drawable/bg_toque" android:contentDescription="Abrir o YouTube">
+        <ImageView android:layout_width="520px" android:layout_height="368px" android:layout_gravity="end|bottom" android:translationX="150px" android:translationY="60px"
+            android:src="@drawable/ic_yt" android:alpha="0.08" android:importantForAccessibility="no" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="36px">
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                <ImageView android:id="@+id/yt_logo" android:layout_width="96px" android:layout_height="68px" android:src="@drawable/ic_yt" android:importantForAccessibility="no" />
+                <TextView style="@style/Texto.Numero" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="22px" android:text="YouTube" android:textSize="64px" android:textStyle="bold" />
+            </LinearLayout>
+            <TextView android:id="@+id/yt_sub" style="@style/Texto" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10px"
+                android:text="Toque para abrir" android:textColor="#FFFFD6DE" android:textSize="22px" />
+            <Space android:layout_width="1px" android:layout_height="0px" android:layout_weight="1" />
+            <LinearLayout android:id="@+id/yt_ultimo" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"
+                android:visibility="gone" android:foreground="@drawable/bg_toque">
+                <FrameLayout android:layout_width="300px" android:layout_height="169px" android:background="@drawable/bg_thumb" android:clipToOutline="true" android:elevation="12px">
+                    <ImageView android:id="@+id/yt_ultimo_img" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="centerCrop" android:importantForAccessibility="no" />
+                </FrameLayout>
+                <LinearLayout android:layout_width="0px" android:layout_weight="1" android:layout_height="wrap_content" android:layout_marginStart="22px" android:orientation="vertical">
+                    <TextView style="@style/Texto" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="CONTINUAR ASSISTINDO" android:textColor="#FFFFD6DE" android:textSize="15px" android:textStyle="bold" android:letterSpacing="0.1" />
+                    <TextView android:id="@+id/yt_ultimo_titulo" style="@style/Texto" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8px"
+                        android:textSize="22px" android:textStyle="bold" android:maxLines="3" android:ellipsize="end" />
+                </LinearLayout>
+            </LinearLayout>
+            <Space android:layout_width="1px" android:layout_height="0px" android:layout_weight="1" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="84px" android:orientation="horizontal">
+                <LinearLayout android:id="@+id/yt_inscricoes" android:layout_width="0px" android:layout_weight="1" android:layout_height="match_parent" android:background="@drawable/bg_pilula" android:foreground="@drawable/bg_toque"
+                    android:orientation="horizontal" android:gravity="center">
+                    <ImageView android:layout_width="28px" android:layout_height="28px" android:src="@drawable/ic_inscricoes" android:importantForAccessibility="no" />
+                    <TextView style="@style/Texto" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="10px" android:text="Inscrições" android:textSize="22px" android:textStyle="bold" />
+                </LinearLayout>
+                <LinearLayout android:id="@+id/yt_historico" android:layout_width="0px" android:layout_weight="1" android:layout_height="match_parent" android:layout_marginStart="14px" android:background="@drawable/bg_pilula" android:foreground="@drawable/bg_toque"
+                    android:orientation="horizontal" android:gravity="center">
+                    <ImageView android:layout_width="28px" android:layout_height="28px" android:src="@drawable/ic_historico" android:importantForAccessibility="no" />
+                    <TextView style="@style/Texto" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="10px" android:text="Histórico" android:textSize="22px" android:textStyle="bold" />
+                </LinearLayout>
+                <LinearLayout android:id="@+id/yt_depois" android:layout_width="0px" android:layout_weight="1" android:layout_height="match_parent" android:layout_marginStart="14px" android:background="@drawable/bg_pilula" android:foreground="@drawable/bg_toque"
+                    android:orientation="horizontal" android:gravity="center">
+                    <ImageView android:layout_width="28px" android:layout_height="28px" android:src="@drawable/ic_depois" android:importantForAccessibility="no" />
+                    <TextView style="@style/Texto" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="10px" android:text="Ver depois" android:textSize="22px" android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+</FrameLayout>

@@ -19,6 +19,7 @@ const VERSAO = JSON.parse(fs.readFileSync(path.resolve(AQUI, '../package.json'),
 const PORTA = Number(process.env.PORT || 8795);
 const DADOS = process.env.DATA_DIR || path.resolve(AQUI, '../dados');
 const APK_LAUNCHER = process.env.LAUNCHER_APK || path.resolve(PUBLICO, 'launcher/calivix-launcher.apk');
+const APK_CARRO = path.resolve(PUBLICO, 'launcher/calivix-carro.apk');
 
 const banco = abrirBanco(DADOS);
 const db = banco.dados;
@@ -162,6 +163,7 @@ async function tentarNoServidor(tarefa) {
       transporte: transporteNode, jwk: db.chaveAdb, aparelho: 'servidor', log, registro: t.registro || null, tls: async () => credenciais(db.chaveAdb),
       salvarRegistro: async (reg) => { t.registro = reg; banco.gravar(); },
       apkLauncher: async () => new Uint8Array(fs.readFileSync(APK_LAUNCHER)),
+      apkCarro: async () => new Uint8Array(fs.readFileSync(APK_CARRO)),
       arquivo: async (nome) => new Uint8Array(fs.readFileSync(path.join(DADOS, 'arquivos', path.basename(nome)))),
     }, { ...t, ip: alvo.ip, porta: alvo.porta }, tarefa);
     aplicarRelato(t.id, r, 'servidor');
